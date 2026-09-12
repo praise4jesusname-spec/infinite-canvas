@@ -424,6 +424,8 @@
         this.zoom = zoom;
         this.panX = 0;
         this.panY = 0;
+        this.originX = 0;
+        this.originY = 0;
         this.viewport = null;
         this.layers = new Map(); // LOD (Level of Detail) layers
       }
@@ -573,7 +575,10 @@
       }
 
       worldToScreen(pos) {
-        return new Vec2(pos.x * this.zoom + this.panX, pos.y * this.zoom + this.panY);
+        return new Vec2(
+          (pos.x - this.originX) * this.zoom + this.panX,
+          (pos.y - this.originY) * this.zoom + this.panY
+        );
       }
     }
     
@@ -585,6 +590,8 @@
       zoom: 1,
       panX: 0,
       panY: 0,
+      originX: 0,
+      originY: 0,
       isDrawing: false,
       pressure: 0,
       touchCount: 0,
@@ -615,16 +622,30 @@
       }
     }
 
+    function rebaseCamera() {
+      if (Math.abs(state.panX) < 4096 && Math.abs(state.panY) < 4096) return;
+
+      const originShiftX = -state.panX / state.zoom;
+      const originShiftY = -state.panY / state.zoom;
+      if (!Number.isFinite(originShiftX) || !Number.isFinite(originShiftY)) return;
+
+      state.originX += originShiftX;
+      state.originY += originShiftY;
+      state.panX = 0;
+      state.panY = 0;
+    }
+
     function setCamera(nextZoom, worldAnchor, screenAnchor) {
       if (!Number.isFinite(nextZoom) || nextZoom <= 0) return false;
 
-      const nextPanX = screenAnchor.x - worldAnchor.x * nextZoom;
-      const nextPanY = screenAnchor.y - worldAnchor.y * nextZoom;
+      const nextPanX = screenAnchor.x - (worldAnchor.x - state.originX) * nextZoom;
+      const nextPanY = screenAnchor.y - (worldAnchor.y - state.originY) * nextZoom;
       if (!Number.isFinite(nextPanX) || !Number.isFinite(nextPanY)) return false;
 
       state.zoom = nextZoom;
       state.panX = nextPanX;
       state.panY = nextPanY;
+      rebaseCamera();
       renderer.zoom = state.zoom;
       updateStats();
       requestRender();
@@ -635,8 +656,8 @@
       const oldZoom = state.zoom;
       const nextZoom = oldZoom * factor;
       const worldAnchor = new Vec2(
-        (clientX - state.panX) / oldZoom,
-        (clientY - state.panY) / oldZoom
+        (clientX - state.panX) / oldZoom + state.originX,
+        (clientY - state.panY) / oldZoom + state.originY
       );
       setCamera(nextZoom, worldAnchor, new Vec2(clientX, clientY));
     }
@@ -651,14 +672,16 @@
       
       // Apply pan and zoom transforms
       renderer.viewport = {
-        left: -state.panX / state.zoom,
-        right: (window.innerWidth - state.panX) / state.zoom,
-        top: -state.panY / state.zoom,
-        bottom: (window.innerHeight - state.panY) / state.zoom
+        left: state.originX - state.panX / state.zoom,
+        right: state.originX + (window.innerWidth - state.panX) / state.zoom,
+        top: state.originY - state.panY / state.zoom,
+        bottom: state.originY + (window.innerHeight - state.panY) / state.zoom
       };
       renderer.zoom = state.zoom;
       renderer.panX = state.panX;
       renderer.panY = state.panY;
+      renderer.originX = state.originX;
+      renderer.originY = state.originY;
       
       // Draw all strokes
       for (const stroke of strokes) {
@@ -681,8 +704,8 @@
       canvas.setPointerCapture(e.pointerId);
       
       const pos = new Vec2(
-        (e.clientX - state.panX) / state.zoom,
-        (e.clientY - state.panY) / state.zoom
+        (e.clientX - state.panX) / state.zoom + state.originX,
+        (e.clientY - state.panY) / state.zoom + state.originY
       );
       
       lastX = pos.x;
@@ -703,8 +726,8 @@
       state.pressure = e.pressure || 0.5;
       
       const pos = new Vec2(
-        (e.clientX - state.panX) / state.zoom,
-        (e.clientY - state.panY) / state.zoom
+        (e.clientX - state.panX) / state.zoom + state.originX,
+        (e.clientY - state.panY) / state.zoom + state.originY
       );
       
       const now = performance.now();
@@ -776,8 +799,8 @@
         if (currentDistance > 0 && state.lastTouchDistance > 0 && state.lastTouchCenter) {
           const ratio = currentDistance / state.lastTouchDistance;
           const worldAnchor = new Vec2(
-            (state.lastTouchCenter.x - state.panX) / state.zoom,
-            (state.lastTouchCenter.y - state.panY) / state.zoom
+            (state.lastTouchCenter.x - state.panX) / state.zoom + state.originX,
+            (state.lastTouchCenter.y - state.panY) / state.zoom + state.originY
           );
           setCamera(state.zoom * ratio, worldAnchor, touchCenter);
         }
@@ -824,6 +847,7 @@
         state.panY += e.clientY - panStartY;
         panStartX = e.clientX;
         panStartY = e.clientY;
+        rebaseCamera();
         requestRender();
       }
     });
