@@ -225,7 +225,7 @@
 <body>
   <canvas id="canvas"></canvas>
   
-  <div id="stats">Zoom: 1.0x | Pressure: 0%</div>
+  <div id="stats">Zoom: 1.0x | Pressure: 0% | Strokes: 0</div>
   <div id="recordingIndicator">● REC <span id="recordingTime">00:00</span></div>
   
   <div id="sidebar">
@@ -252,7 +252,6 @@
     <div class="section">
       <div class="section-label">Utilities</div>
       <button class="btn" id="colorWheelBtn"><span class="emoji">🎨</span>Wheel</button>
-      <button class="btn" id="eyedropperBtn"><span class="emoji">🔍</span>Pick</button>
       <button class="btn" id="undoBtn"><span class="emoji">↶</span>Undo</button>
       <button class="btn" id="clearBtn"><span class="emoji">🗑️</span>Clear</button>
       <button class="btn" id="downloadBtn"><span class="emoji">⬇️</span>Save</button>
@@ -277,79 +276,474 @@
   </div>
 
   <script>
+    // ===== VECTOR-BASED INFINITE CANVAS WITH FRACTAL RENDERING =====
+    
     const canvas = document.getElementById('canvas');
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const ctx = canvas.getContext('2d', { 
+      willReadFrequently: true,
+      alpha: true,
+      antialias: true
+    });
+    
+    // High DPI support
+    const dpr = window.devicePixelRatio || 1;
     
     function resizeCanvas() {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
-      ctx.fillStyle = 'white';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      canvas.width = window.innerWidth * dpr;
+      canvas.height = window.innerHeight * dpr;
+      canvas.style.width = window.innerWidth + 'px';
+      canvas.style.height = window.innerHeight + 'px';
+      ctx.scale(dpr, dpr);
     }
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
     
+    // ===== VECTOR MATH =====
+    class Vec2 {
+      constructor(x = 0, y = 0) {
+        this.x = x;
+        this.y = y;
+      }
+      
+      add(v) {
+        return new Vec2(this.x + v.x, this.y + v.y);
+      }
+      
+      sub(v) {
+        return new Vec2(this.x - v.x, this.y - v.y);
+      }
+      
+      mul(scalar) {
+        return new Vec2(this.x * scalar, this.y * scalar);
+      }
+      
+      div(scalar) {
+        return new Vec2(this.x / scalar, this.y / scalar);
+      }
+      
+      dot(v) {
+        return this.x * v.x + this.y * v.y;
+      }
+      
+      length() {
+        return Math.sqrt(this.x * this.x + this.y * this.y);
+      }
+      
+      normalize() {
+        const len = this.length();
+        return len > 0 ? this.div(len) : new Vec2(0, 0);
+      }
+      
+      distance(v) {
+        return this.sub(v).length();
+      }
+      
+      lerp(v, t) {
+        return this.add(v.sub(this).mul(t));
+      }
+      
+      clone() {
+        return new Vec2(this.x, this.y);
+      }
+    }
+    
+    // ===== VECTOR STROKE =====
+    class Stroke {
+      constructor(tool, color, baseSize) {
+        this.points = []; // Array of {pos: Vec2, pressure: number, timestamp: number}
+        this.tool = tool;
+        this.color = color;
+        this.baseSize = baseSize;
+      }
+      
+      addPoint(pos, pressure, timestamp) {
+        this.points.push({ pos: pos.clone(), pressure, timestamp });
+      }
+      
+      getSegment(startIdx, endIdx) {
+        return this.points.slice(startIdx, endIdx + 1);
+      }
+    }
+    
+    // ===== BRUSH DYNAMICS (Endless Paper Style) =====
+    const brushDynamics = {
+      pen: {
+        baseWidth: 1.5,
+        pressureSensitivity: 0.8,
+        velocityTaper: 0.2,
+        softness: 0,
+        opacity: 1
+      },
+      brush: {
+        baseWidth: 4,
+        pressureSensitivity: 1,
+        velocityTaper: 0.5,
+        softness: 0.4,
+        opacity: 0.8
+      },
+      marker: {
+        baseWidth: 6,
+        pressureSensitivity: 0.5,
+        velocityTaper: 0.3,
+        softness: 0.6,
+        opacity: 0.7
+      },
+      ink: {
+        baseWidth: 2,
+        pressureSensitivity: 1,
+        velocityTaper: 0.1,
+        softness: 0,
+        opacity: 1
+      },
+      pencil: {
+        baseWidth: 1,
+        pressureSensitivity: 0.7,
+        velocityTaper: 0.4,
+        softness: 0.2,
+        opacity: 0.9
+      }
+    };
+    
+    // ===== FRACTAL RENDERING ENGINE =====
+    class FractalRenderer {
+      constructor(ctx, zoom) {
+        this.ctx = ctx;
+        this.zoom = zoom;
+        this.layers = new Map(); // LOD (Level of Detail) layers
+      }
+      
+      // Compute width based on velocity and pressure (Endless Paper style)
+      computeWidth(prevPos, currPos, pressure, dynamics) {
+        const velocity = prevPos ? prevPos.distance(currPos) : 0;
+        const velocityFactor = Math.pow(Math.max(0.1, 1 - velocity * 0.01), dynamics.velocityTaper);
+        const widthFromPressure = dynamics.baseWidth * (0.5 + pressure * dynamics.pressureSensitivity);
+        return widthFromPressure * velocityFactor * (1 / this.zoom);
+      }
+      
+      // Render stroke with adaptive sampling (fractal subdivision)
+      renderStroke(stroke, startIdx = 0, endIdx = null) {
+        if (endIdx === null) endIdx = stroke.points.length - 1;
+        if (startIdx >= endIdx) return;
+        
+        const dynamics = brushDynamics[stroke.tool];
+        const points = stroke.points;
+        
+        // Adaptive Catmull-Rom spline with fractal subdivision
+        for (let i = startIdx; i < endIdx; i++) {
+          const p0 = i > 0 ? points[i - 1].pos : points[i].pos;
+          const p1 = points[i].pos;
+          const p2 = points[i + 1].pos;
+          const p3 = i < points.length - 2 ? points[i + 2].pos : points[i + 1].pos;
+          
+          const pressure1 = points[i].pressure;
+          const pressure2 = points[i + 1].pressure;
+          
+          // Fractal subdivision - draw multiple segments for smooth curves
+          const segments = Math.max(2, Math.ceil(p1.distance(p2) * 0.5));
+          
+          for (let t = 0; t < segments; t++) {
+            const tau = t / segments;
+            const tau2 = tau * tau;
+            const tau3 = tau2 * tau;
+            
+            // Catmull-Rom interpolation
+            const q = p0.mul(-0.5 * tau3 + tau2 - 0.5 * tau)
+              .add(p1.mul(1.5 * tau3 - 2.5 * tau2 + 1))
+              .add(p2.mul(-1.5 * tau3 + 2 * tau2 + 0.5 * tau))
+              .add(p3.mul(0.5 * tau3 - 0.5 * tau2));
+            
+            const pressure = pressure1 + (pressure2 - pressure1) * tau;
+            const width = this.computeWidth(p1, q, pressure, dynamics);
+            
+            // Render with softness (fractal brush texture)
+            this.drawBrushPoint(q, width, stroke.color, dynamics);
+          }
+        }
+      }
+      
+      // Fractal brush point rendering with soft edges
+      drawBrushPoint(pos, width, color, dynamics) {
+        const ctx = this.ctx;
+        
+        ctx.fillStyle = color;
+        ctx.globalAlpha = dynamics.opacity;
+        
+        const actualWidth = Math.max(0.5, width);
+        
+        if (dynamics.softness > 0.5) {
+          // Soft brush - fractal gradient
+          const gradient = ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, actualWidth);
+          gradient.addColorStop(0, color);
+          gradient.addColorStop(1, color + '00');
+          ctx.fillStyle = gradient;
+        }
+        
+        // Draw circle with dynamic scaling
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, actualWidth / 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+    }
+    
+    // ===== STATE MANAGEMENT =====
     let state = {
       tool: 'pen',
       color: '#000000',
       size: 3,
       zoom: 1,
+      panX: 0,
+      panY: 0,
       isDrawing: false,
       pressure: 0,
       touchCount: 0,
       lastTouchDistance: 0,
-      isRecording: false
+      isRecording: false,
+      velocity: new Vec2(0, 0)
     };
     
+    let strokes = []; // All vector strokes
+    let currentStroke = null;
     let history = [];
     let selectedColor = '#000000';
-    let eyedropperActive = false;
     let mediaRecorder = null;
     let recordedChunks = [];
     let recordingStartTime = 0;
     let recordingInterval = null;
+    let renderer = new FractalRenderer(ctx, state.zoom);
     
-    const tools = {
-      pen: { width: 1.2, opacity: 1 },
-      brush: { width: 3, opacity: 0.7 },
-      marker: { width: 5, opacity: 0.6 },
-      ink: { width: 1.5, opacity: 1 },
-      pencil: { width: 0.8, opacity: 0.8 }
-    };
+    let lastX = 0, lastY = 0;
+    let lastTime = 0;
     
-    function drawLine(fromX, fromY, toX, toY, pressure = 1) {
-      const tool = tools[state.tool];
-      const width = state.size * tool.width * pressure;
-      const opacity = tool.opacity * pressure;
+    // ===== RENDERING LOOP =====
+    function render() {
+      // Clear canvas
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
       
-      ctx.strokeStyle = state.color;
-      ctx.lineWidth = Math.max(0.5, width);
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      ctx.globalAlpha = opacity;
+      // Apply pan and zoom transforms
+      ctx.save();
+      ctx.translate(state.panX, state.panY);
+      ctx.scale(state.zoom, state.zoom);
       
-      ctx.beginPath();
-      ctx.moveTo(fromX, fromY);
-      ctx.lineTo(toX, toY);
-      ctx.stroke();
-      ctx.globalAlpha = 1;
-    }
-    
-    function saveHistory() {
-      history.push(canvas.toDataURL());
-      if (history.length > 50) history.shift();
-    }
-    
-    function undo() {
-      if (history.length > 0) {
-        const img = new Image();
-        img.onload = () => {
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          ctx.drawImage(img, 0, 0);
-        };
-        img.src = history.pop();
+      // Draw all strokes
+      for (const stroke of strokes) {
+        renderer.renderStroke(stroke);
       }
+      
+      ctx.restore();
+      
+      requestAnimationFrame(render);
     }
+    render();
+    
+    // ===== POINTER EVENTS =====
+    canvas.addEventListener('pointerdown', (e) => {
+      if (state.touchCount > 0 && e.pointerType === 'touch') return;
+      if (e.button !== 0) return;
+      
+      state.isDrawing = true;
+      state.pressure = e.pressure || 0.5;
+      
+      const pos = new Vec2(
+        (e.clientX - state.panX) / state.zoom,
+        (e.clientY - state.panY) / state.zoom
+      );
+      
+      lastX = pos.x;
+      lastY = pos.y;
+      lastTime = performance.now();
+      
+      currentStroke = new Stroke(state.tool, state.color, state.size);
+      currentStroke.addPoint(pos, state.pressure, lastTime);
+      
+      history.push(JSON.stringify(strokes));
+      if (history.length > 50) history.shift();
+    });
+    
+    canvas.addEventListener('pointermove', (e) => {
+      if (!state.isDrawing || e.isPrimary === false) return;
+      
+      state.pressure = e.pressure || 0.5;
+      
+      const pos = new Vec2(
+        (e.clientX - state.panX) / state.zoom,
+        (e.clientY - state.panY) / state.zoom
+      );
+      
+      const now = performance.now();
+      const deltaTime = now - lastTime;
+      
+      if (deltaTime > 0) {
+        state.velocity = new Vec2(
+          (pos.x - lastX) / deltaTime,
+          (pos.y - lastY) / deltaTime
+        );
+      }
+      
+      currentStroke.addPoint(pos, state.pressure, now);
+      lastX = pos.x;
+      lastY = pos.y;
+      lastTime = now;
+      
+      updateStats();
+    });
+    
+    canvas.addEventListener('pointerup', () => {
+      if (state.isDrawing && currentStroke) {
+        strokes.push(currentStroke);
+        currentStroke = null;
+      }
+      state.isDrawing = false;
+      state.pressure = 0;
+    });
+    
+    canvas.addEventListener('pointerleave', () => {
+      if (state.isDrawing && currentStroke) {
+        strokes.push(currentStroke);
+        currentStroke = null;
+      }
+      state.isDrawing = false;
+    });
+    
+    // ===== TOUCH ZOOM (FIXED) =====
+    canvas.addEventListener('touchstart', (e) => {
+      state.touchCount = e.touches.length;
+      
+      if (e.touches.length === 2) {
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        state.lastTouchDistance = Math.sqrt(dx * dx + dy * dy);
+      }
+    }, { passive: true });
+    
+    canvas.addEventListener('touchmove', (e) => {
+      if (e.touches.length >= 2) {
+        e.preventDefault();
+        
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        const currentDistance = Math.sqrt(dx * dx + dy * dy);
+        
+        if (state.lastTouchDistance > 0) {
+          const ratio = currentDistance / state.lastTouchDistance;
+          const pinchCenter = new Vec2(
+            (e.touches[0].clientX + e.touches[1].clientX) / 2,
+            (e.touches[0].clientY + e.touches[1].clientY) / 2
+          );
+          
+          // Zoom towards pinch center
+          const oldZoom = state.zoom;
+          state.zoom *= ratio;
+          state.zoom = Math.max(0.01, Math.min(state.zoom, 1000));
+          
+          // Adjust pan to keep center fixed
+          state.panX = pinchCenter.x - (pinchCenter.x - state.panX) * (state.zoom / oldZoom);
+          state.panY = pinchCenter.y - (pinchCenter.y - state.panY) * (state.zoom / oldZoom);
+          
+          renderer.zoom = state.zoom;
+          state.lastTouchDistance = currentDistance;
+          updateStats();
+        }
+      }
+    }, { passive: false });
+    
+    canvas.addEventListener('touchend', (e) => {
+      state.touchCount = e.touches.length;
+      state.lastTouchDistance = 0;
+    }, { passive: true });
+    
+    // ===== MOUSE WHEEL ZOOM =====
+    canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      
+      const delta = e.deltaY > 0 ? 0.95 : 1.05;
+      const oldZoom = state.zoom;
+      state.zoom *= delta;
+      state.zoom = Math.max(0.01, Math.min(state.zoom, 1000));
+      
+      // Zoom towards mouse position
+      state.panX = e.clientX - (e.clientX - state.panX) * (state.zoom / oldZoom);
+      state.panY = e.clientY - (e.clientY - state.panY) * (state.zoom / oldZoom);
+      
+      renderer.zoom = state.zoom;
+      updateStats();
+    }, { passive: false });
+    
+    // ===== PAN (RIGHT CLICK) =====
+    let isPanning = false;
+    let panStartX = 0, panStartY = 0;
+    
+    canvas.addEventListener('mousedown', (e) => {
+      if (e.button === 2) {
+        isPanning = true;
+        panStartX = e.clientX;
+        panStartY = e.clientY;
+      }
+    });
+    
+    canvas.addEventListener('mousemove', (e) => {
+      if (isPanning) {
+        state.panX += e.clientX - panStartX;
+        state.panY += e.clientY - panStartY;
+        panStartX = e.clientX;
+        panStartY = e.clientY;
+      }
+    });
+    
+    canvas.addEventListener('mouseup', () => {
+      isPanning = false;
+    });
+    
+    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    
+    // ===== UI CONTROLS =====
+    document.querySelectorAll('[data-tool]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        document.querySelectorAll('[data-tool]').forEach(b => b.classList.remove('active'));
+        e.target.closest('.btn').classList.add('active');
+        state.tool = e.target.closest('.btn').dataset.tool;
+      });
+    });
+    
+    document.getElementById('sizeSlider').addEventListener('input', (e) => {
+      state.size = parseInt(e.target.value);
+      document.getElementById('sizeValue').textContent = state.size;
+    });
+    
+    document.getElementById('colorInput').addEventListener('change', (e) => {
+      state.color = e.target.value;
+    });
+    
+    document.getElementById('colorWheelBtn').addEventListener('click', () => {
+      document.getElementById('colorWheelModal').classList.add('active');
+      drawColorWheel();
+    });
+    
+    document.getElementById('undoBtn').addEventListener('click', () => {
+      if (strokes.length > 0) {
+        strokes.pop();
+      }
+    });
+    
+    document.getElementById('clearBtn').addEventListener('click', () => {
+      if (confirm('Clear canvas?')) {
+        strokes = [];
+        history = [];
+      }
+    });
+    
+    document.getElementById('downloadBtn').addEventListener('click', () => {
+      const link = document.createElement('a');
+      link.href = canvas.toDataURL();
+      link.download = `canvas-${Date.now()}.png`;
+      link.click();
+    });
+    
+    document.getElementById('recordBtn').addEventListener('click', () => {
+      if (!state.isRecording) startRecording();
+      else stopRecording();
+    });
     
     async function startRecording() {
       try {
@@ -404,155 +798,6 @@
       }
     }
     
-    let lastX = 0, lastY = 0;
-    
-    canvas.addEventListener('pointerdown', (e) => {
-      if (state.touchCount > 0 && e.pointerType === 'touch') return;
-      if (e.button !== 0) return;
-      
-      state.isDrawing = true;
-      state.pressure = e.pressure || 0.5;
-      lastX = e.clientX;
-      lastY = e.clientY;
-      saveHistory();
-    });
-    
-    canvas.addEventListener('pointermove', (e) => {
-      if (!state.isDrawing || e.isPrimary === false) return;
-      state.pressure = e.pressure || 0.5;
-      
-      if (!eyedropperActive) {
-        drawLine(lastX, lastY, e.clientX, e.clientY, state.pressure);
-      }
-      lastX = e.clientX;
-      lastY = e.clientY;
-    });
-    
-    canvas.addEventListener('pointerup', () => {
-      state.isDrawing = false;
-      state.pressure = 0;
-    });
-    
-    canvas.addEventListener('pointerleave', () => {
-      state.isDrawing = false;
-      state.pressure = 0;
-    });
-    
-    canvas.addEventListener('touchstart', (e) => {
-      state.touchCount = e.touches.length;
-      if (e.touches.length === 2) {
-        const dx = e.touches[0].clientX - e.touches[1].clientX;
-        const dy = e.touches[0].clientY - e.touches[1].clientY;
-        state.lastTouchDistance = Math.sqrt(dx * dx + dy * dy);
-      }
-    }, { passive: true });
-    
-    canvas.addEventListener('touchmove', (e) => {
-      if (e.touches.length >= 2) {
-        e.preventDefault();
-        const dx = e.touches[0].clientX - e.touches[1].clientX;
-        const dy = e.touches[0].clientY - e.touches[1].clientY;
-        const currentDistance = Math.sqrt(dx * dx + dy * dy);
-        
-        if (state.lastTouchDistance > 0) {
-          const ratio = currentDistance / state.lastTouchDistance;
-          state.zoom *= ratio;
-          state.zoom = Math.max(0.01, Math.min(state.zoom, 1000));
-          state.lastTouchDistance = currentDistance;
-          updateStats();
-        }
-      }
-    }, { passive: false });
-    
-    canvas.addEventListener('touchend', (e) => {
-      state.touchCount = e.touches.length;
-      state.lastTouchDistance = 0;
-    }, { passive: true });
-    
-    canvas.addEventListener('wheel', (e) => {
-      e.preventDefault();
-      const delta = e.deltaY > 0 ? 0.95 : 1.05;
-      state.zoom *= delta;
-      state.zoom = Math.max(0.01, Math.min(state.zoom, 1000));
-      updateStats();
-    }, { passive: false });
-    
-    let isPanning = false;
-    let panStartX = 0, panStartY = 0;
-    
-    canvas.addEventListener('mousedown', (e) => {
-      if (e.button === 2) {
-        isPanning = true;
-        panStartX = e.clientX;
-        panStartY = e.clientY;
-      }
-    });
-    
-    canvas.addEventListener('mousemove', (e) => {
-      if (isPanning) {
-        panStartX = e.clientX;
-        panStartY = e.clientY;
-      }
-    });
-    
-    canvas.addEventListener('mouseup', () => {
-      isPanning = false;
-    });
-    
-    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-    
-    document.querySelectorAll('[data-tool]').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        document.querySelectorAll('[data-tool]').forEach(b => b.classList.remove('active'));
-        e.target.closest('.btn').classList.add('active');
-        state.tool = e.target.closest('.btn').dataset.tool;
-      });
-    });
-    
-    document.getElementById('sizeSlider').addEventListener('input', (e) => {
-      state.size = parseInt(e.target.value);
-      document.getElementById('sizeValue').textContent = state.size;
-    });
-    
-    document.getElementById('colorInput').addEventListener('change', (e) => {
-      state.color = e.target.value;
-    });
-    
-    document.getElementById('colorWheelBtn').addEventListener('click', () => {
-      document.getElementById('colorWheelModal').classList.add('active');
-      drawColorWheel();
-    });
-    
-    document.getElementById('eyedropperBtn').addEventListener('click', () => {
-      eyedropperActive = !eyedropperActive;
-      canvas.style.cursor = eyedropperActive ? 'crosshair' : 'default';
-      document.getElementById('eyedropperBtn').classList.toggle('active');
-      if (eyedropperActive) canvas.addEventListener('click', pickColor);
-    });
-    
-    document.getElementById('undoBtn').addEventListener('click', undo);
-    
-    document.getElementById('clearBtn').addEventListener('click', () => {
-      if (confirm('Clear canvas?')) {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = 'white';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        history = [];
-      }
-    });
-    
-    document.getElementById('downloadBtn').addEventListener('click', () => {
-      const link = document.createElement('a');
-      link.href = canvas.toDataURL();
-      link.download = `canvas-${Date.now()}.png`;
-      link.click();
-    });
-    
-    document.getElementById('recordBtn').addEventListener('click', () => {
-      if (!state.isRecording) startRecording();
-      else stopRecording();
-    });
-    
     function drawColorWheel() {
       const wheelCanvas = document.getElementById('colorWheelCanvas');
       const wheelCtx = wheelCanvas.getContext('2d');
@@ -599,21 +844,10 @@
       document.getElementById('colorWheelModal').classList.remove('active');
     };
     
-    function pickColor(e) {
-      const imageData = ctx.getImageData(e.clientX, e.clientY, 1, 1);
-      const [r, g, b] = imageData.data;
-      const hex = '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('').toUpperCase();
-      state.color = hex;
-      document.getElementById('colorInput').value = hex;
-      eyedropperActive = false;
-      canvas.style.cursor = 'default';
-      document.getElementById('eyedropperBtn').classList.remove('active');
-      canvas.removeEventListener('click', pickColor);
-    }
-    
     function updateStats() {
       const pressurePercent = Math.round(state.pressure * 100);
-      document.getElementById('stats').textContent = `Zoom: ${state.zoom.toFixed(2)}x | Pressure: ${pressurePercent}%`;
+      document.getElementById('stats').textContent = 
+        `Zoom: ${state.zoom.toFixed(2)}x | Pressure: ${pressurePercent}% | Strokes: ${strokes.length}`;
     }
   </script>
 </body>
