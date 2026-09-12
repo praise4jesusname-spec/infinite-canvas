@@ -289,21 +289,23 @@
     // ===== VECTOR-BASED INFINITE CANVAS WITH FRACTAL RENDERING =====
     
     const canvas = document.getElementById('canvas');
-    const ctx = canvas.getContext('2d', { 
-      willReadFrequently: true,
-      alpha: true,
-      antialias: true
+    const ctx = canvas.getContext('2d', {
+      alpha: false,
+      desynchronized: true
     });
     
     // High DPI support
-    const dpr = window.devicePixelRatio || 1;
+    let dpr = window.devicePixelRatio || 1;
     
     function resizeCanvas() {
-      canvas.width = window.innerWidth * dpr;
-      canvas.height = window.innerHeight * dpr;
+      dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.round(window.innerWidth * dpr);
+      canvas.height = Math.round(window.innerHeight * dpr);
       canvas.style.width = window.innerWidth + 'px';
       canvas.style.height = window.innerHeight + 'px';
-      ctx.scale(dpr, dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
     }
     resizeCanvas();
     window.addEventListener('resize', () => {
@@ -757,17 +759,7 @@
       requestRender();
     });
     
-    canvas.addEventListener('pointermove', (e) => {
-      if (e.pointerType === 'touch' && activeTouchPointers.has(e.pointerId)) {
-        activeTouchPointers.set(e.pointerId, new Vec2(e.clientX, e.clientY));
-        if (activeTouchPointers.size >= 2) {
-          updateTouchGesture();
-          return;
-        }
-      }
-
-      if (!state.isDrawing || e.isPrimary === false) return;
-      
+    function appendStrokePoint(e) {
       state.pressure = e.pressure || 0.5;
       
       const pos = new Vec2(
@@ -775,7 +767,7 @@
         (e.clientY - state.panY) / state.zoom + state.originY
       );
       
-      const now = performance.now();
+      const now = e.timeStamp || performance.now();
       const deltaTime = now - lastTime;
       
       if (deltaTime > 0) {
@@ -789,6 +781,23 @@
       lastX = pos.x;
       lastY = pos.y;
       lastTime = now;
+    }
+
+    canvas.addEventListener('pointermove', (e) => {
+      if (e.pointerType === 'touch' && activeTouchPointers.has(e.pointerId)) {
+        activeTouchPointers.set(e.pointerId, new Vec2(e.clientX, e.clientY));
+        if (activeTouchPointers.size >= 2) {
+          updateTouchGesture();
+          return;
+        }
+      }
+
+      if (!state.isDrawing || e.isPrimary === false) return;
+
+      const coalescedEvents = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+      for (const pointEvent of coalescedEvents) {
+        appendStrokePoint(pointEvent);
+      }
       
       updateStats();
       requestRender();
