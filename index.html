@@ -409,6 +409,7 @@
       constructor(ctx, zoom) {
         this.ctx = ctx;
         this.zoom = zoom;
+        this.viewport = null;
         this.layers = new Map(); // LOD (Level of Detail) layers
       }
       
@@ -437,6 +438,12 @@
         const dynamics = brushDynamics[stroke.tool];
         const points = stroke.points;
         const samples = [];
+        const flushSamples = () => {
+          if (samples.length > 1) {
+            this.drawBrushRibbon(samples, stroke.color, dynamics);
+          }
+          samples.length = 0;
+        };
         
         // Adaptive Catmull-Rom spline sampling in screen-space.
         for (let i = startIdx; i < endIdx; i++) {
@@ -444,6 +451,11 @@
           const p1 = points[i].pos;
           const p2 = points[i + 1].pos;
           const p3 = i < points.length - 2 ? points[i + 2].pos : points[i + 1].pos;
+
+          if (!this.isSegmentVisible(p0, p1, p2, p3, stroke.baseSize)) {
+            flushSamples();
+            continue;
+          }
           
           const pressure1 = points[i].pressure;
           const pressure2 = points[i + 1].pressure;
@@ -474,7 +486,21 @@
           }
         }
 
-        this.drawBrushRibbon(samples, stroke.color, dynamics);
+        flushSamples();
+      }
+
+      isSegmentVisible(p0, p1, p2, p3, baseSize) {
+        if (!this.viewport) return true;
+
+        const padding = Math.max(8, baseSize * 2) / this.zoom;
+        const minX = Math.min(p0.x, p1.x, p2.x, p3.x);
+        const maxX = Math.max(p0.x, p1.x, p2.x, p3.x);
+        const minY = Math.min(p0.y, p1.y, p2.y, p3.y);
+        const maxY = Math.max(p0.y, p1.y, p2.y, p3.y);
+        const { left, right, top, bottom } = this.viewport;
+
+        return maxX >= left - padding && minX <= right + padding &&
+          maxY >= top - padding && minY <= bottom + padding;
       }
       
       drawBrushRibbon(samples, color, dynamics) {
@@ -575,6 +601,12 @@
       ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
       
       // Apply pan and zoom transforms
+      renderer.viewport = {
+        left: -state.panX / state.zoom,
+        right: (window.innerWidth - state.panX) / state.zoom,
+        top: -state.panY / state.zoom,
+        bottom: (window.innerHeight - state.panY) / state.zoom
+      };
       ctx.save();
       ctx.translate(state.panX, state.panY);
       ctx.scale(state.zoom, state.zoom);
