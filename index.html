@@ -81,6 +81,18 @@
       border-color: #333;
     }
     
+    .btn.recording {
+      background: #e74c3c;
+      color: white;
+      border-color: #e74c3c;
+      animation: pulse 1s infinite;
+    }
+    
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+    
     .emoji {
       font-size: 20px;
     }
@@ -117,6 +129,25 @@
       color: #666;
       font-family: monospace;
       z-index: 999;
+    }
+    
+    #recordingIndicator {
+      position: fixed;
+      top: 10px;
+      left: 110px;
+      background: #e74c3c;
+      color: white;
+      padding: 8px 12px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: bold;
+      z-index: 999;
+      display: none;
+      animation: pulse 1s infinite;
+    }
+    
+    #recordingIndicator.active {
+      display: block;
     }
     
     /* Color Wheel Modal */
@@ -199,6 +230,7 @@
   <canvas id="canvas"></canvas>
   
   <div id="stats">Zoom: 1.0x | Pressure: 0%</div>
+  <div id="recordingIndicator">● REC <span id="recordingTime">00:00</span></div>
   
   <div id="sidebar">
     <div class="section">
@@ -228,6 +260,11 @@
       <button class="btn" id="undoBtn"><span class="emoji">↶</span>Undo</button>
       <button class="btn" id="clearBtn"><span class="emoji">🗑️</span>Clear</button>
       <button class="btn" id="downloadBtn"><span class="emoji">⬇️</span>Save</button>
+    </div>
+
+    <div class="section">
+      <div class="section-label">Record</div>
+      <button class="btn" id="recordBtn"><span class="emoji">⏺️</span>Record</button>
     </div>
   </div>
   
@@ -266,12 +303,17 @@
       isDrawing: false,
       pressure: 0,
       touchCount: 0,
-      lastTouchDistance: 0
+      lastTouchDistance: 0,
+      isRecording: false
     };
     
     let history = [];
     let selectedColor = '#000000';
     let eyedropperActive = false;
+    let mediaRecorder = null;
+    let recordedChunks = [];
+    let recordingStartTime = 0;
+    let recordingInterval = null;
     
     // Tool settings
     const tools = {
@@ -318,11 +360,72 @@
       }
     }
     
+    // Screen Recording
+    async function startRecording() {
+      try {
+        const stream = await canvas.captureStream(30); // 30 FPS
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        
+        recordedChunks = [];
+        mediaRecorder = new MediaRecorder(stream, {
+          mimeType: 'video/webm;codecs=vp9',
+          videoBitsPerSecond: 2500000
+        });
+        
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            recordedChunks.push(event.data);
+          }
+        };
+        
+        mediaRecorder.onstop = () => {
+          const blob = new Blob(recordedChunks, { type: 'video/webm' });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          link.download = `canvas-recording-${Date.now()}.webm`;
+          link.click();
+          URL.revokeObjectURL(url);
+        };
+        
+        mediaRecorder.start();
+        state.isRecording = true;
+        recordingStartTime = Date.now();
+        
+        // Update recording time display
+        recordingInterval = setInterval(() => {
+          const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
+          const minutes = Math.floor(elapsed / 60);
+          const seconds = elapsed % 60;
+          document.getElementById('recordingTime').textContent = 
+            `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        }, 100);
+        
+        document.getElementById('recordBtn').classList.add('recording');
+        document.getElementById('recordingIndicator').classList.add('active');
+      } catch (err) {
+        console.error('Failed to start recording:', err);
+        alert('Recording failed. Your browser may not support canvas recording.');
+      }
+    }
+    
+    function stopRecording() {
+      if (mediaRecorder && state.isRecording) {
+        mediaRecorder.stop();
+        state.isRecording = false;
+        clearInterval(recordingInterval);
+        
+        document.getElementById('recordBtn').classList.remove('recording');
+        document.getElementById('recordingIndicator').classList.remove('active');
+        document.getElementById('recordingTime').textContent = '00:00';
+      }
+    }
+    
     // Pointer events (drawing with single pointer only)
     let lastX = 0, lastY = 0;
     
     canvas.addEventListener('pointerdown', (e) => {
-      if (state.touchCount > 0 && e.pointerType === 'touch') return; // Ignore if already multi-touch
+      if (state.touchCount > 0 && e.pointerType === 'touch') return;
       if (e.button !== 0) return;
       
       state.isDrawing = true;
@@ -386,10 +489,6 @@
           const ratio = currentDistance / state.lastTouchDistance;
           state.zoom *= ratio;
           state.zoom = Math.max(0.1, Math.min(state.zoom, 100));
-          
-          // Pan to center point
-          const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
-          const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
           
           state.lastTouchDistance = currentDistance;
           updateStats();
@@ -474,6 +573,7 @@
     });
     
     document.getElementById('undoBtn').addEventListener('click', undo);
+    
     document.getElementById('clearBtn').addEventListener('click', () => {
       if (confirm('Clear canvas?')) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -486,6 +586,14 @@
       link.href = canvas.toDataURL();
       link.download = `canvas-${Date.now()}.png`;
       link.click();
+    });
+    
+    document.getElementById('recordBtn').addEventListener('click', () => {
+      if (!state.isRecording) {
+        startRecording();
+      } else {
+        stopRecording();
+      }
     });
     
     // Color wheel
