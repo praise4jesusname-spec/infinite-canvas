@@ -273,23 +273,23 @@
       border-color: #999;
     }
     
-    /* Tooltip */
-    .tooltip {
-      position: absolute;
-      background: #333;
-      color: white;
-      padding: 6px 10px;
-      border-radius: 4px;
+    /* Pressure Indicator */
+    #pressureIndicator {
+      position: fixed;
+      bottom: 10px;
+      left: 90px;
       font-size: 11px;
-      white-space: nowrap;
-      pointer-events: none;
-      opacity: 0;
-      transition: opacity 0.2s ease;
+      color: #666;
+      background: rgba(255, 255, 255, 0.8);
+      padding: 4px 8px;
+      border-radius: 4px;
+      border: 1px solid #ddd;
     }
   </style>
 </head>
 <body>
-  <div id="stats">Zoom: 1.0x | Touch: Pinch to zoom</div>
+  <div id="stats">Zoom: 1.0x | Pressure: 0%</div>
+  <div id="pressureIndicator">Pressure: 0%</div>
   
   <!-- Sidebar -->
   <div id="sidebar">
@@ -380,10 +380,12 @@
     let history = [];
     let maxHistorySize = 50;
     let selectedColorWheel = '#000000';
+    let currentPressure = 0;
     
     // Touch zoom state
     let lastDistance = 0;
     let touchStartZoom = 1.0;
+    let isTouchZoom = false;
     
     // Tool Presets with smooth rendering
     const toolPresets = {
@@ -501,13 +503,14 @@
     
     // Setup Event Listeners
     function setupEventListeners() {
-      // Drawing
+      // Drawing - only with pointer (pen/mouse/single touch)
       canvas.addEventListener('pointerdown', handlePointerDown);
       canvas.addEventListener('pointermove', handlePointerMove);
       canvas.addEventListener('pointerup', handlePointerUp);
       canvas.addEventListener('pointerleave', handlePointerUp);
+      canvas.addEventListener('pointercancel', handlePointerUp);
       
-      // Touch zoom (pinch)
+      // Touch zoom (pinch) - only with 2 fingers
       canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
       canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
       canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
@@ -546,7 +549,7 @@
       window.addEventListener('resize', updateStats);
     }
     
-    // Touch Zoom Handlers
+    // Touch Zoom Handlers (ONLY with 2+ fingers)
     function getTouchDistance(touches) {
       if (touches.length < 2) return 0;
       const dx = touches[0].clientX - touches[1].clientX;
@@ -561,44 +564,62 @@
     }
     
     function handleTouchStart(e) {
-      if (e.touches.length === 2) {
+      // Only handle pinch zoom with 2+ fingers
+      if (e.touches.length >= 2) {
+        isTouchZoom = true;
+        isDrawing = false;
         lastDistance = getTouchDistance(e.touches);
         touchStartZoom = zoom;
+      } else if (e.touches.length === 1) {
+        isTouchZoom = false;
+        // Single touch will be handled by pointerdown
       }
     }
     
     function handleTouchMove(e) {
-      if (e.touches.length === 2) {
+      // Only zoom with 2+ fingers
+      if (e.touches.length >= 2 && isTouchZoom) {
         e.preventDefault();
         const currentDistance = getTouchDistance(e.touches);
-        const ratio = currentDistance / lastDistance;
         
-        // Increase sensitivity
-        const zoomFactor = Math.pow(ratio, 2.5);
-        
-        const center = getTouchCenter(e.touches);
-        const mousePos = new PIXI.Point(center.x, center.y);
-        const worldPos = world.toLocal(mousePos);
-        
-        zoom = touchStartZoom * zoomFactor;
-        zoom = Math.max(0.1, Math.min(zoom, 100));
-        
-        world.scale.set(zoom);
-        
-        const newMousePos = world.toGlobal(worldPos);
-        world.x -= newMousePos.x - mousePos.x;
-        world.y -= newMousePos.y - mousePos.y;
-        
-        updateStats();
+        if (lastDistance > 0) {
+          const ratio = currentDistance / lastDistance;
+          
+          // More controlled zoom sensitivity
+          const zoomFactor = Math.pow(ratio, 1.5);
+          
+          const center = getTouchCenter(e.touches);
+          const mousePos = new PIXI.Point(center.x, center.y);
+          const worldPos = world.toLocal(mousePos);
+          
+          zoom = touchStartZoom * zoomFactor;
+          zoom = Math.max(0.1, Math.min(zoom, 100));
+          
+          world.scale.set(zoom);
+          
+          const newMousePos = world.toGlobal(worldPos);
+          world.x -= newMousePos.x - mousePos.x;
+          world.y -= newMousePos.y - mousePos.y;
+          
+          updateStats();
+        }
+      } else if (e.touches.length === 1 && !isTouchZoom) {
+        // Single touch drawing - handled by pointermove
       }
     }
     
-    function handleTouchEnd() {
-      lastDistance = 0;
+    function handleTouchEnd(e) {
+      if (e.touches.length < 2) {
+        isTouchZoom = false;
+        lastDistance = 0;
+      }
     }
     
-    // Pointer Events
+    // Pointer Events - ONLY single touch/pen/mouse
     function handlePointerDown(e) {
+      // Ignore if multiple touches
+      if (e.isPrimary === false || isTouchZoom) return;
+      
       if (e.button !== 0 || e.ctrlKey) return;
       
       isDrawing = true;
@@ -609,38 +630,54 @@
       
       const pos = world.toLocal(new PIXI.Point(e.clientX, e.clientY));
       currentPath.moveTo(pos.x, pos.y);
+      
+      // Detect pressure
+      currentPressure = e.pressure || 0.5;
+      updatePressureDisplay();
     }
     
     function handlePointerMove(e) {
-      if (!isDrawing || !currentPath) return;
+      if (!isDrawing || !currentPath || !e.isPrimary || isTouchZoom) return;
       
       const pos = world.toLocal(new PIXI.Point(e.clientX, e.clientY));
       const color = document.getElementById('colorInput').value;
       const size = parseInt(document.getElementById('sizeSlider').value);
       const preset = toolPresets[currentTool];
       
-      const width = (size * preset.width) / zoom;
+      // Get pressure (0 to 1)
+      currentPressure = e.pressure || 0.5;
+      
+      // Apply pressure to width and opacity
+      const pressureMultiplier = Math.pow(currentPressure, 0.8);
+      const width = (size * preset.width * pressureMultiplier) / zoom;
+      const alpha = preset.alpha * pressureMultiplier;
       
       currentPath.lineTo(pos.x, pos.y);
       currentPath.stroke({
-        width: width,
+        width: Math.max(0.5, width),
         color: color,
         cap: 'round',
         join: 'round',
-        alpha: preset.alpha
+        alpha: alpha
       });
+      
+      updatePressureDisplay();
     }
     
-    function handlePointerUp() {
+    function handlePointerUp(e) {
+      if (!e.isPrimary) return;
       isDrawing = false;
       currentPath = null;
+      currentPressure = 0;
+      updatePressureDisplay();
     }
     
-    // Wheel Zoom
+    // Wheel Zoom - More controlled
     function handleWheel(e) {
       e.preventDefault();
       
-      const zoomFactor = Math.pow(0.95, e.deltaY / 100);
+      // More subtle zoom
+      const zoomFactor = Math.pow(0.98, e.deltaY / 100);
       const mousePos = new PIXI.Point(e.clientX, e.clientY);
       const worldPos = world.toLocal(mousePos);
       
@@ -738,8 +775,8 @@
     
     function pickColorFromCanvas(e) {
       const texture = app.renderer.generateTexture(world);
-      const canvas = texture.source.resource;
-      const ctx = canvas.getContext('2d');
+      const canvasEl = texture.source.resource;
+      const ctx = canvasEl.getContext('2d');
       
       const rect = document.getElementById('c').getBoundingClientRect();
       const x = e.clientX - rect.left;
@@ -787,17 +824,23 @@
     
     function downloadCanvas() {
       const texture = app.renderer.generateTexture(world);
-      const canvas = texture.source.resource;
+      const canvasEl = texture.source.resource;
       const link = document.createElement('a');
-      link.href = canvas.toDataURL();
+      link.href = canvasEl.toDataURL();
       link.download = `infinite-canvas-${Date.now()}.png`;
       link.click();
       texture.destroy(true);
     }
     
+    function updatePressureDisplay() {
+      const pressurePercent = Math.round(currentPressure * 100);
+      document.getElementById('pressureIndicator').textContent = `Pressure: ${pressurePercent}%`;
+      document.getElementById('stats').innerHTML = `Zoom: ${zoom.toFixed(2)}x | Pressure: ${pressurePercent}%`;
+    }
+    
     function updateStats() {
-      const stats = document.getElementById('stats');
-      stats.innerText = `Zoom: ${zoom.toFixed(2)}x | Touch: Pinch to zoom`;
+      const pressurePercent = Math.round(currentPressure * 100);
+      document.getElementById('stats').innerHTML = `Zoom: ${zoom.toFixed(2)}x | Pressure: ${pressurePercent}%`;
     }
     
     // Initialize
