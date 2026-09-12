@@ -419,6 +419,8 @@
       constructor(ctx, zoom) {
         this.ctx = ctx;
         this.zoom = zoom;
+        this.panX = 0;
+        this.panY = 0;
         this.viewport = null;
         this.layers = new Map(); // LOD (Level of Detail) layers
       }
@@ -429,7 +431,7 @@
         const velocityFactor = Math.pow(Math.max(0.1, 1 - velocity * 0.01), dynamics.velocityTaper);
         const widthFromPressure = dynamics.baseWidth * (baseSize / 3) *
           (0.5 + pressure * dynamics.pressureSensitivity);
-        return widthFromPressure * velocityFactor * (1 / this.zoom);
+        return widthFromPressure * velocityFactor;
       }
       
       // Render each stroke as one continuous variable-width ribbon.
@@ -517,20 +519,24 @@
         if (samples.length < 2) return;
 
         const ctx = this.ctx;
+        const screenSamples = samples.map(sample => ({
+          pos: this.worldToScreen(sample.pos),
+          width: sample.width
+        }));
         ctx.fillStyle = color;
         ctx.globalAlpha = dynamics.opacity;
         ctx.filter = dynamics.softness > 0.5 ? `blur(${dynamics.softness}px)` : 'none';
 
         const left = [];
         const right = [];
-        for (let i = 0; i < samples.length; i++) {
-          const previous = samples[Math.max(0, i - 1)].pos;
-          const next = samples[Math.min(samples.length - 1, i + 1)].pos;
+        for (let i = 0; i < screenSamples.length; i++) {
+          const previous = screenSamples[Math.max(0, i - 1)].pos;
+          const next = screenSamples[Math.min(screenSamples.length - 1, i + 1)].pos;
           const direction = next.sub(previous).normalize();
-          const radius = Math.max(0.25 / this.zoom, samples[i].width / 2);
+          const radius = Math.max(0.25, screenSamples[i].width / 2);
           const normal = new Vec2(-direction.y * radius, direction.x * radius);
-          left.push(samples[i].pos.add(normal));
-          right.push(samples[i].pos.sub(normal));
+          left.push(screenSamples[i].pos.add(normal));
+          right.push(screenSamples[i].pos.sub(normal));
         }
 
         ctx.beginPath();
@@ -539,10 +545,10 @@
         for (let i = right.length - 1; i >= 0; i--) ctx.lineTo(right[i].x, right[i].y);
         ctx.closePath();
 
-        const first = samples[0];
-        const last = samples[samples.length - 1];
-        const firstRadius = Math.max(0.25 / this.zoom, first.width / 2);
-        const lastRadius = Math.max(0.25 / this.zoom, last.width / 2);
+        const first = screenSamples[0];
+        const last = screenSamples[screenSamples.length - 1];
+        const firstRadius = Math.max(0.25, first.width / 2);
+        const lastRadius = Math.max(0.25, last.width / 2);
         ctx.moveTo(first.pos.x + firstRadius, first.pos.y);
         ctx.arc(first.pos.x, first.pos.y, firstRadius, 0, Math.PI * 2);
         ctx.moveTo(last.pos.x + lastRadius, last.pos.y);
@@ -554,12 +560,17 @@
 
       drawBrushDot(pos, width, color, dynamics) {
         const ctx = this.ctx;
+        const screenPos = this.worldToScreen(pos);
         ctx.fillStyle = color;
         ctx.globalAlpha = dynamics.opacity;
         ctx.beginPath();
-        ctx.arc(pos.x, pos.y, Math.max(0.25 / this.zoom, width / 2), 0, Math.PI * 2);
+        ctx.arc(screenPos.x, screenPos.y, Math.max(0.25, width / 2), 0, Math.PI * 2);
         ctx.fill();
         ctx.globalAlpha = 1;
+      }
+
+      worldToScreen(pos) {
+        return new Vec2(pos.x * this.zoom + this.panX, pos.y * this.zoom + this.panY);
       }
     }
     
@@ -631,9 +642,9 @@
         top: -state.panY / state.zoom,
         bottom: (window.innerHeight - state.panY) / state.zoom
       };
-      ctx.save();
-      ctx.translate(state.panX, state.panY);
-      ctx.scale(state.zoom, state.zoom);
+      renderer.zoom = state.zoom;
+      renderer.panX = state.panX;
+      renderer.panY = state.panY;
       
       // Draw all strokes
       for (const stroke of strokes) {
@@ -642,8 +653,6 @@
       if (currentStroke) {
         renderer.renderStroke(currentStroke);
       }
-      
-      ctx.restore();
       
       requestAnimationFrame(render);
     }
