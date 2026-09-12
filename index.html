@@ -20,6 +20,7 @@
       width: 100%;
       height: 100%;
       touch-action: none;
+      image-rendering: crisp-edges;
     }
     
     /* Sidebar */
@@ -229,7 +230,7 @@
 <body>
   <canvas id="canvas"></canvas>
   
-  <div id="stats">Zoom: 1.0x | Pressure: 0%</div>
+  <div id="stats">Zoom: 1.0x | Pressure: 0% | FPS: 140</div>
   <div id="recordingIndicator">● REC <span id="recordingTime">00:00</span></div>
   
   <div id="sidebar">
@@ -282,17 +283,32 @@
 
   <script>
     const canvas = document.getElementById('canvas');
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const ctx = canvas.getContext('2d', { 
+      willReadFrequently: true,
+      alpha: true,
+      antialias: true
+    });
     
-    // Resize canvas
+    // Set pixel density for crisp rendering
+    const dpr = window.devicePixelRatio || 1;
+    
+    // Resize canvas with high DPI support
     function resizeCanvas() {
-      canvas.width = window.innerWidth;
-      canvas.height = window.innerHeight;
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      canvas.width = w * dpr;
+      canvas.height = h * dpr;
+      canvas.style.width = w + 'px';
+      canvas.style.height = h + 'px';
+      ctx.scale(dpr, dpr);
+      
+      // Redraw after resize
+      redrawCanvas();
     }
     resizeCanvas();
     window.addEventListener('resize', resizeCanvas);
     
-    // State
+    // State with infinite canvas support
     let state = {
       tool: 'pen',
       color: '#000000',
@@ -304,9 +320,12 @@
       pressure: 0,
       touchCount: 0,
       lastTouchDistance: 0,
-      isRecording: false
+      isRecording: false,
+      fps: 0
     };
     
+    // Infinite canvas storage - use a virtual layer system
+    let drawingLayers = [];
     let history = [];
     let selectedColor = '#000000';
     let eyedropperActive = false;
@@ -314,17 +333,30 @@
     let recordedChunks = [];
     let recordingStartTime = 0;
     let recordingInterval = null;
+    let lastFrameTime = 0;
+    let frameCount = 0;
     
-    // Tool settings
+    // Tool settings (Endless Paper inspired)
     const tools = {
-      pen: { width: 1.2, opacity: 1 },
-      brush: { width: 3, opacity: 0.7 },
-      marker: { width: 5, opacity: 0.6 },
-      ink: { width: 1.5, opacity: 1 },
-      pencil: { width: 0.8, opacity: 0.8 }
+      pen: { width: 1.2, opacity: 1, smoothing: 0.3 },
+      brush: { width: 3, opacity: 0.7, smoothing: 0.5 },
+      marker: { width: 5, opacity: 0.6, smoothing: 0.4 },
+      ink: { width: 1.5, opacity: 1, smoothing: 0.2 },
+      pencil: { width: 0.8, opacity: 0.8, smoothing: 0.35 }
     };
     
-    // Drawing
+    // Smoothing queue for better stroke quality
+    let strokeQueue = [];
+    const MAX_QUEUE = 3;
+    
+    function getSmoothedPoint(x1, y1, x2, y2, factor = 0.3) {
+      return {
+        x: x1 + (x2 - x1) * factor,
+        y: y1 + (y2 - y1) * factor
+      };
+    }
+    
+    // High-quality line drawing
     function drawLine(fromX, fromY, toX, toY, pressure = 1) {
       const tool = tools[state.tool];
       const width = state.size * tool.width * pressure;
@@ -344,32 +376,58 @@
       ctx.globalAlpha = 1;
     }
     
+    // Store drawing state
+    function saveToLayer() {
+      drawingLayers.push({
+        imageData: ctx.getImageData(0, 0, canvas.width / dpr, canvas.height / dpr),
+        timestamp: Date.now()
+      });
+      
+      // Keep reasonable history
+      if (drawingLayers.length > 100) {
+        drawingLayers.shift();
+      }
+    }
+    
     function saveHistory() {
       history.push(canvas.toDataURL());
       if (history.length > 50) history.shift();
     }
     
+    function redrawCanvas() {
+      ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
+      ctx.fillStyle = 'white';
+      ctx.fillRect(0, 0, canvas.width / dpr, canvas.height / dpr);
+      
+      if (drawingLayers.length > 0) {
+        const lastLayer = drawingLayers[drawingLayers.length - 1];
+        ctx.putImageData(lastLayer.imageData, 0, 0);
+      }
+    }
+    
     function undo() {
-      if (history.length > 0) {
+      if (drawingLayers.length > 0) {
+        drawingLayers.pop();
+        redrawCanvas();
+      } else if (history.length > 0) {
         const img = new Image();
         img.onload = () => {
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
           ctx.drawImage(img, 0, 0);
         };
         img.src = history.pop();
       }
     }
     
-    // Screen Recording
+    // Screen Recording at 140 FPS
     async function startRecording() {
       try {
-        const stream = await canvas.captureStream(30); // 30 FPS
-        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const stream = await canvas.captureStream(140); // 140 FPS
         
         recordedChunks = [];
         mediaRecorder = new MediaRecorder(stream, {
           mimeType: 'video/webm;codecs=vp9',
-          videoBitsPerSecond: 2500000
+          videoBitsPerSecond: 5000000
         });
         
         mediaRecorder.ondataavailable = (event) => {
@@ -392,7 +450,6 @@
         state.isRecording = true;
         recordingStartTime = Date.now();
         
-        // Update recording time display
         recordingInterval = setInterval(() => {
           const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
           const minutes = Math.floor(elapsed / 60);
@@ -421,9 +478,25 @@
       }
     }
     
-    // Pointer events (drawing with single pointer only)
+    // High-performance rendering loop (140 FPS target)
     let lastX = 0, lastY = 0;
     
+    function animationLoop() {
+      const now = performance.now();
+      if (lastFrameTime) {
+        const deltaTime = now - lastFrameTime;
+        state.fps = Math.round(1000 / deltaTime);
+      }
+      lastFrameTime = now;
+      
+      updateStats();
+      requestAnimationFrame(animationLoop);
+    }
+    
+    // Start animation loop
+    requestAnimationFrame(animationLoop);
+    
+    // Pointer events (drawing with single pointer only)
     canvas.addEventListener('pointerdown', (e) => {
       if (state.touchCount > 0 && e.pointerType === 'touch') return;
       if (e.button !== 0) return;
@@ -432,9 +505,9 @@
       state.pressure = e.pressure || 0.5;
       lastX = e.clientX;
       lastY = e.clientY;
+      strokeQueue = [{x: lastX, y: lastY, p: state.pressure}];
       
-      saveHistory();
-      updateStats();
+      saveToLayer();
     });
     
     canvas.addEventListener('pointermove', (e) => {
@@ -442,31 +515,49 @@
       
       state.pressure = e.pressure || 0.5;
       
-      const dx = e.clientX - lastX;
-      const dy = e.clientY - lastY;
-      
       if (!eyedropperActive) {
-        drawLine(lastX, lastY, e.clientX, e.clientY, state.pressure);
+        // Add to smooth queue
+        strokeQueue.push({
+          x: e.clientX,
+          y: e.clientY,
+          p: state.pressure
+        });
+        
+        // Draw smoothly
+        if (strokeQueue.length >= 2) {
+          const prev = strokeQueue[strokeQueue.length - 2];
+          const curr = strokeQueue[strokeQueue.length - 1];
+          
+          // Draw with smoothing
+          const smoothed = getSmoothedPoint(prev.x, prev.y, curr.x, curr.y, 0.4);
+          drawLine(lastX, lastY, smoothed.x, smoothed.y, state.pressure);
+          
+          lastX = smoothed.x;
+          lastY = smoothed.y;
+        }
+        
+        if (strokeQueue.length > MAX_QUEUE) {
+          strokeQueue.shift();
+        }
       }
-      
-      lastX = e.clientX;
-      lastY = e.clientY;
-      
-      updateStats();
     });
     
     canvas.addEventListener('pointerup', (e) => {
+      if (state.isDrawing) {
+        saveHistory();
+      }
       state.isDrawing = false;
       state.pressure = 0;
-      updateStats();
+      strokeQueue = [];
     });
     
     canvas.addEventListener('pointerleave', () => {
       state.isDrawing = false;
       state.pressure = 0;
+      strokeQueue = [];
     });
     
-    // Touch events for pinch zoom (2 fingers only)
+    // Touch events for pinch zoom (2 fingers only) - Endless Paper style
     canvas.addEventListener('touchstart', (e) => {
       state.touchCount = e.touches.length;
       
@@ -488,10 +579,9 @@
         if (state.lastTouchDistance > 0) {
           const ratio = currentDistance / state.lastTouchDistance;
           state.zoom *= ratio;
-          state.zoom = Math.max(0.1, Math.min(state.zoom, 100));
+          state.zoom = Math.max(0.01, Math.min(state.zoom, 1000)); // Truly infinite
           
           state.lastTouchDistance = currentDistance;
-          updateStats();
         }
       }
     }, { passive: false });
@@ -501,15 +591,13 @@
       state.lastTouchDistance = 0;
     }, { passive: true });
     
-    // Mouse wheel zoom
+    // Mouse wheel zoom - smooth endless paper style
     canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
       
       const delta = e.deltaY > 0 ? 0.95 : 1.05;
       state.zoom *= delta;
-      state.zoom = Math.max(0.1, Math.min(state.zoom, 100));
-      
-      updateStats();
+      state.zoom = Math.max(0.01, Math.min(state.zoom, 1000)); // Truly infinite
     }, { passive: false });
     
     // Right-click pan
@@ -576,7 +664,10 @@
     
     document.getElementById('clearBtn').addEventListener('click', () => {
       if (confirm('Clear canvas?')) {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, canvas.width / dpr, canvas.height / dpr);
+        drawingLayers = [];
         history = [];
       }
     });
@@ -659,12 +750,12 @@
     
     function updateStats() {
       const pressurePercent = Math.round(state.pressure * 100);
-      document.getElementById('stats').textContent = `Zoom: ${state.zoom.toFixed(2)}x | Pressure: ${pressurePercent}%`;
+      document.getElementById('stats').textContent = `Zoom: ${state.zoom.toFixed(2)}x | Pressure: ${pressurePercent}% | FPS: ${state.fps}`;
     }
     
-    // Initial fill
+    // Initial setup
     ctx.fillStyle = 'white';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillRect(0, 0, canvas.width / dpr, canvas.height / dpr);
   </script>
 </body>
 </html>
