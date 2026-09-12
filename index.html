@@ -6,7 +6,7 @@
   <title>Infinite Canvas</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    
+
     body, html {
       width: 100%;
       height: 100%;
@@ -575,6 +575,7 @@
       pressure: 0,
       touchCount: 0,
       lastTouchDistance: 0,
+      lastTouchCenter: null,
       isRecording: false,
       velocity: new Vec2(0, 0)
     };
@@ -592,16 +593,29 @@
     let lastX = 0, lastY = 0;
     let lastTime = 0;
 
+    function setCamera(nextZoom, worldAnchor, screenAnchor) {
+      if (!Number.isFinite(nextZoom) || nextZoom <= 0) return false;
+
+      const nextPanX = screenAnchor.x - worldAnchor.x * nextZoom;
+      const nextPanY = screenAnchor.y - worldAnchor.y * nextZoom;
+      if (!Number.isFinite(nextPanX) || !Number.isFinite(nextPanY)) return false;
+
+      state.zoom = nextZoom;
+      state.panX = nextPanX;
+      state.panY = nextPanY;
+      renderer.zoom = state.zoom;
+      updateStats();
+      return true;
+    }
+
     function zoomAt(factor, clientX, clientY) {
       const oldZoom = state.zoom;
       const nextZoom = oldZoom * factor;
-      if (!Number.isFinite(nextZoom) || nextZoom <= 0) return;
-
-      state.zoom = nextZoom;
-      state.panX = clientX - (clientX - state.panX) * factor;
-      state.panY = clientY - (clientY - state.panY) * factor;
-      renderer.zoom = state.zoom;
-      updateStats();
+      const worldAnchor = new Vec2(
+        (clientX - state.panX) / oldZoom,
+        (clientY - state.panY) / oldZoom
+      );
+      setCamera(nextZoom, worldAnchor, new Vec2(clientX, clientY));
     }
     
     // ===== RENDERING LOOP =====
@@ -708,12 +722,16 @@
     canvas.addEventListener('touchstart', (e) => {
       state.touchCount = e.touches.length;
       
-      if (e.touches.length === 2) {
+      if (e.touches.length >= 2) {
         currentStroke = null;
         state.isDrawing = false;
         const dx = e.touches[0].clientX - e.touches[1].clientX;
         const dy = e.touches[0].clientY - e.touches[1].clientY;
         state.lastTouchDistance = Math.sqrt(dx * dx + dy * dy);
+        state.lastTouchCenter = new Vec2(
+          (e.touches[0].clientX + e.touches[1].clientX) / 2,
+          (e.touches[0].clientY + e.touches[1].clientY) / 2
+        );
       }
     }, { passive: true });
     
@@ -725,25 +743,36 @@
         const dy = e.touches[0].clientY - e.touches[1].clientY;
         const currentDistance = Math.sqrt(dx * dx + dy * dy);
         
-        if (currentDistance > 0 && state.lastTouchDistance > 0) {
+        const touchCenter = new Vec2(
+          (e.touches[0].clientX + e.touches[1].clientX) / 2,
+          (e.touches[0].clientY + e.touches[1].clientY) / 2
+        );
+
+        if (currentDistance > 0 && state.lastTouchDistance > 0 && state.lastTouchCenter) {
           const ratio = currentDistance / state.lastTouchDistance;
-          const pinchCenter = new Vec2(
-            (e.touches[0].clientX + e.touches[1].clientX) / 2,
-            (e.touches[0].clientY + e.touches[1].clientY) / 2
+          const worldAnchor = new Vec2(
+            (state.lastTouchCenter.x - state.panX) / state.zoom,
+            (state.lastTouchCenter.y - state.panY) / state.zoom
           );
-          
-          zoomAt(ratio, pinchCenter.x, pinchCenter.y);
+          setCamera(state.zoom * ratio, worldAnchor, touchCenter);
         }
         if (currentDistance > 0) {
           state.lastTouchDistance = currentDistance;
         }
+        state.lastTouchCenter = touchCenter;
       }
     }, { passive: false });
     
-    canvas.addEventListener('touchend', (e) => {
+    function resetTouchGesture(e) {
       state.touchCount = e.touches.length;
-      state.lastTouchDistance = 0;
-    }, { passive: true });
+      if (e.touches.length < 2) {
+        state.lastTouchDistance = 0;
+        state.lastTouchCenter = null;
+      }
+    }
+
+    canvas.addEventListener('touchend', resetTouchGesture, { passive: true });
+    canvas.addEventListener('touchcancel', resetTouchGesture, { passive: true });
     
     // ===== MOUSE WHEEL ZOOM =====
     canvas.addEventListener('wheel', (e) => {
