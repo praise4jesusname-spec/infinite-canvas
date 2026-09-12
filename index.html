@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Infinite Zoom Canvas</title>
+  <style>
+    body, html {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      height: 100%;
+      background: #121212;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+    
+    canvas {
+      display: block;
+      touch-action: none;
+      cursor: crosshair;
+    }
+    
+    #stats {
+      position: fixed;
+      top: 10px;
+      left: 10px;
+      color: #666;
+      font-size: 12px;
+      pointer-events: none;
+      font-family: 'Courier New', monospace;
+    }
+    
+    #ui {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(30, 30, 30, 0.95);
+      padding: 15px 25px;
+      border-radius: 50px;
+      display: flex;
+      gap: 15px;
+      align-items: center;
+      border: 1px solid #444;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+      backdrop-filter: blur(10px);
+    }
+    
+    .btn {
+      background: #333;
+      border: none;
+      color: white;
+      padding: 10px 12px;
+      border-radius: 50%;
+      cursor: pointer;
+      font-size: 18px;
+      transition: background 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 40px;
+      height: 40px;
+    }
+    
+    .btn:hover {
+      background: #555;
+    }
+    
+    .btn:active {
+      background: #777;
+    }
+    
+    #color {
+      width: 40px;
+      height: 40px;
+      border: none;
+      border-radius: 50%;
+      cursor: pointer;
+      transition: transform 0.2s ease;
+    }
+    
+    #color:hover {
+      transform: scale(1.1);
+    }
+    
+    .tool-label {
+      color: #999;
+      font-size: 11px;
+      text-align: center;
+      margin-top: 2px;
+    }
+  </style>
+</head>
+<body>
+  <div id="stats">Zoom: 1.0x | Resolution: 0x0</div>
+  
+  <div id="ui">
+    <button class="btn" onclick="clearCanvas()" title="Clear Canvas">🗑️</button>
+    <input type="color" id="color" value="#ffffff" title="Pick Color">
+    <button class="btn active-tool" id="penBtn" onclick="setTool('pen')" title="Pen">🖊️</button>
+    <button class="btn" id="brushBtn" onclick="setTool('brush')" title="Brush">🖌️</button>
+    <button class="btn" onclick="downloadCanvas()" title="Download">⬇️</button>
+  </div>
+  
+  <canvas id="c"></canvas>
+
+  <script type="module">
+    import * as PIXI from 'https://esm.sh/pixi.js@8';
+    
+    // Global State
+    let zoom = 1.0;
+    let isDrawing = false;
+    let currentPath = null;
+    let currentTool = 'pen';
+    let app, world, canvas;
+    
+    // Tool Settings
+    const toolSettings = {
+      pen: { width: 2, alpha: 1 },
+      brush: { width: 8, alpha: 0.7 }
+    };
+    
+    // Initialize PixiJS
+    async function init() {
+      canvas = document.getElementById('c');
+      app = new PIXI.Application();
+      
+      await app.init({
+        canvas: canvas,
+        resizeTo: window,
+        antialias: true,
+        background: '#121212',
+        preference: 'webgpu'
+      });
+      
+      world = new PIXI.Container();
+      app.stage.addChild(world);
+      
+      setupEventListeners();
+      updateStats();
+    }
+    
+    // Setup Event Listeners
+    function setupEventListeners() {
+      // Drawing
+      canvas.addEventListener('pointerdown', handlePointerDown);
+      canvas.addEventListener('pointermove', handlePointerMove);
+      canvas.addEventListener('pointerup', handlePointerUp);
+      canvas.addEventListener('pointerleave', handlePointerUp);
+      
+      // Zoom
+      canvas.addEventListener('wheel', handleWheel, { passive: false });
+      
+      // Pan with Middle Mouse Button or Space + Drag
+      let isPanning = false;
+      let lastX = 0;
+      let lastY = 0;
+      
+      canvas.addEventListener('pointerdown', (e) => {
+        if (e.button === 2 || (e.button === 0 && e.ctrlKey)) {
+          isPanning = true;
+          lastX = e.clientX;
+          lastY = e.clientY;
+        }
+      });
+      
+      canvas.addEventListener('pointermove', (e) => {
+        if (isPanning) {
+          world.x += e.clientX - lastX;
+          world.y += e.clientY - lastY;
+          lastX = e.clientX;
+          lastY = e.clientY;
+        }
+      });
+      
+      canvas.addEventListener('pointerup', () => {
+        isPanning = false;
+      });
+      
+      canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+      
+      // Window resize
+      window.addEventListener('resize', updateStats);
+    }
+    
+    // Pointer Events
+    function handlePointerDown(e) {
+      if (e.button !== 0 || e.ctrlKey) return;
+      
+      isDrawing = true;
+      currentPath = new PIXI.Graphics();
+      world.addChild(currentPath);
+      
+      const pos = world.toLocal(new PIXI.Point(e.clientX, e.clientY));
+      currentPath.moveTo(pos.x, pos.y);
+    }
+    
+    function handlePointerMove(e) {
+      if (!isDrawing) return;
+      
+      const pos = world.toLocal(new PIXI.Point(e.clientX, e.clientY));
+      const color = document.getElementById('color').value;
+      const settings = toolSettings[currentTool];
+      
+      currentPath.lineTo(pos.x, pos.y);
+      currentPath.stroke({
+        width: settings.width / zoom,
+        color: color,
+        cap: 'round',
+        join: 'round',
+        alpha: settings.alpha
+      });
+    }
+    
+    function handlePointerUp() {
+      isDrawing = false;
+      currentPath = null;
+    }
+    
+    // Zoom Handler
+    function handleWheel(e) {
+      e.preventDefault();
+      
+      const zoomFactor = Math.pow(0.999, e.deltaY);
+      const mousePos = new PIXI.Point(e.clientX, e.clientY);
+      const worldPos = world.toLocal(mousePos);
+      
+      zoom *= zoomFactor;
+      zoom = Math.max(0.1, Math.min(zoom, 100)); // Clamp zoom
+      
+      world.scale.set(zoom);
+      
+      const newMousePos = world.toGlobal(worldPos);
+      world.x -= newMousePos.x - mousePos.x;
+      world.y -= newMousePos.y - mousePos.y;
+      
+      updateStats();
+    }
+    
+    // UI Functions
+    window.clearCanvas = function() {
+      world.removeChildren();
+      updateStats();
+    };
+    
+    window.setTool = function(tool) {
+      currentTool = tool;
+      document.querySelectorAll('.btn.active-tool').forEach(btn => {
+        btn.classList.remove('active-tool');
+      });
+      document.getElementById(tool + 'Btn').classList.add('active-tool');
+    };
+    
+    window.downloadCanvas = function() {
+      const texture = app.renderer.generateTexture(world);
+      const canvas = texture.source.resource;
+      const link = document.createElement('a');
+      link.href = canvas.toDataURL();
+      link.download = `infinite-canvas-${Date.now()}.png`;
+      link.click();
+      texture.destroy(true);
+    };
+    
+    function updateStats() {
+      const stats = document.getElementById('stats');
+      stats.innerText = `Zoom: ${zoom.toFixed(2)}x | Resolution: ${canvas.width}x${canvas.height}`;
+    }
+    
+    // Initialize
+    init();
+  </script>
+</body>
+</html>
