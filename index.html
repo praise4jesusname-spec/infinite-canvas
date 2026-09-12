@@ -3,848 +3,560 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Infinite Canvas - Drawing Studio</title>
+  <title>Infinite Canvas</title>
   <style>
-    * {
-      box-sizing: border-box;
-    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
     
     body, html {
-      margin: 0;
-      padding: 0;
-      overflow: hidden;
+      width: 100%;
       height: 100%;
-      background: #ffffff;
+      background: white;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      overflow: hidden;
     }
     
     canvas {
       display: block;
+      width: 100%;
+      height: 100%;
       touch-action: none;
-      cursor: crosshair;
+    }
+    
+    /* Sidebar */
+    #sidebar {
+      position: fixed;
+      left: 0;
+      top: 0;
+      width: 90px;
+      height: 100vh;
+      background: #f8f8f8;
+      border-right: 1px solid #ddd;
+      overflow-y: auto;
+      z-index: 1000;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+    }
+    
+    .section {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    
+    .section-label {
+      font-size: 9px;
+      font-weight: bold;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 0 5px;
+    }
+    
+    .btn {
+      width: 70px;
+      padding: 8px;
+      border: 1px solid #ddd;
+      background: white;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 11px;
+      color: #333;
+      transition: all 0.15s;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+    }
+    
+    .btn:hover {
+      background: #f0f0f0;
+      border-color: #999;
+    }
+    
+    .btn.active {
+      background: #333;
+      color: white;
+      border-color: #333;
+    }
+    
+    .emoji {
+      font-size: 20px;
+    }
+    
+    #colorInput {
+      width: 70px;
+      height: 35px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    
+    #sizeSlider {
+      width: 65px;
+      height: 3px;
+      cursor: pointer;
+    }
+    
+    .size-value {
+      font-size: 9px;
+      color: #666;
+      text-align: center;
     }
     
     #stats {
       position: fixed;
       top: 10px;
       right: 10px;
-      color: #999;
-      font-size: 12px;
-      pointer-events: none;
-      font-family: 'Courier New', monospace;
-      background: rgba(255, 255, 255, 0.8);
+      background: rgba(255,255,255,0.9);
       padding: 8px 12px;
-      border-radius: 4px;
       border: 1px solid #ddd;
-    }
-    
-    /* Left Sidebar */
-    #sidebar {
-      position: fixed;
-      left: 0;
-      top: 0;
-      width: 80px;
-      height: 100%;
-      background: #f5f5f5;
-      border-right: 1px solid #ddd;
-      display: flex;
-      flex-direction: column;
-      padding: 15px 0;
-      gap: 10px;
-      overflow-y: auto;
-      z-index: 100;
-    }
-    
-    .tool-section {
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      padding: 0 8px;
-      border-bottom: 1px solid #e0e0e0;
-      padding-bottom: 12px;
-    }
-    
-    .tool-section:last-child {
-      border-bottom: none;
-    }
-    
-    .section-title {
-      font-size: 10px;
-      font-weight: 600;
+      border-radius: 4px;
+      font-size: 11px;
       color: #666;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      padding: 0 5px;
-    }
-    
-    .tool-btn {
-      width: 64px;
-      height: 56px;
-      border: 2px solid transparent;
-      background: white;
-      border-radius: 6px;
-      cursor: pointer;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 4px;
-      font-size: 12px;
-      color: #333;
-      transition: all 0.2s ease;
-      font-weight: 500;
-    }
-    
-    .tool-btn:hover {
-      background: #efefef;
-      border-color: #ddd;
-    }
-    
-    .tool-btn.active {
-      background: #333;
-      color: white;
-      border-color: #333;
-    }
-    
-    .tool-emoji {
-      font-size: 24px;
-    }
-    
-    /* Color Picker */
-    #colorSection {
-      padding: 12px 8px;
-      border-top: 1px solid #e0e0e0;
-      border-bottom: 1px solid #e0e0e0;
-    }
-    
-    #colorInput {
-      width: 64px;
-      height: 40px;
-      border: 2px solid #ddd;
-      border-radius: 6px;
-      cursor: pointer;
-    }
-    
-    #colorInput:hover {
-      border-color: #999;
+      font-family: monospace;
+      z-index: 999;
     }
     
     /* Color Wheel Modal */
-    #colorWheelModal {
+    .modal {
       display: none;
       position: fixed;
       top: 0;
       left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(0, 0, 0, 0.5);
-      z-index: 1000;
-      justify-content: center;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.5);
+      z-index: 2000;
       align-items: center;
+      justify-content: center;
     }
     
-    #colorWheelModal.active {
+    .modal.active {
       display: flex;
     }
     
-    #colorWheelContainer {
+    .modal-content {
       background: white;
       padding: 30px;
-      border-radius: 12px;
-      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
+      border-radius: 8px;
+      box-shadow: 0 5px 20px rgba(0,0,0,0.3);
+      text-align: center;
     }
     
-    #colorWheel {
+    .modal h2 {
+      margin: 0 0 20px 0;
+      font-size: 16px;
+      color: #333;
+    }
+    
+    #colorWheelCanvas {
       width: 300px;
       height: 300px;
       border-radius: 50%;
+      border: 2px solid #ddd;
+      margin: 0 auto 20px;
       cursor: crosshair;
+      display: block;
     }
     
     #colorPreview {
       width: 100%;
-      height: 60px;
-      border-radius: 6px;
+      height: 50px;
       border: 2px solid #ddd;
+      border-radius: 4px;
+      margin: 0 0 20px 0;
+      background: #000;
     }
     
-    .color-wheel-controls {
+    .modal-buttons {
       display: flex;
       gap: 10px;
       justify-content: center;
     }
     
-    .color-wheel-controls button {
+    .modal-buttons button {
       padding: 10px 20px;
       border: none;
-      border-radius: 6px;
+      border-radius: 4px;
       cursor: pointer;
       font-weight: 600;
-      transition: background 0.2s ease;
     }
     
-    .color-wheel-controls button.confirm {
+    .btn-confirm {
       background: #333;
       color: white;
     }
     
-    .color-wheel-controls button.confirm:hover {
-      background: #555;
-    }
-    
-    .color-wheel-controls button.cancel {
+    .btn-cancel {
       background: #ddd;
       color: #333;
-    }
-    
-    .color-wheel-controls button.cancel:hover {
-      background: #bbb;
-    }
-    
-    /* Size Slider */
-    #sizeSection {
-      padding: 12px 8px;
-      border-bottom: 1px solid #e0e0e0;
-    }
-    
-    #sizeSlider {
-      width: 60px;
-      height: 4px;
-      border-radius: 2px;
-      outline: none;
-      -webkit-appearance: none;
-      appearance: none;
-      background: #ddd;
-    }
-    
-    #sizeSlider::-webkit-slider-thumb {
-      -webkit-appearance: none;
-      appearance: none;
-      width: 12px;
-      height: 12px;
-      border-radius: 50%;
-      background: #333;
-      cursor: pointer;
-    }
-    
-    #sizeSlider::-moz-range-thumb {
-      width: 12px;
-      height: 12px;
-      border-radius: 50%;
-      background: #333;
-      cursor: pointer;
-      border: none;
-    }
-    
-    .size-label {
-      font-size: 10px;
-      color: #666;
-      text-align: center;
-      margin-top: 4px;
-    }
-    
-    /* Utility Buttons */
-    #utilitySection {
-      padding: 12px 8px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-    
-    .util-btn {
-      width: 64px;
-      height: 40px;
-      border: 2px solid #ddd;
-      background: white;
-      border-radius: 6px;
-      cursor: pointer;
-      font-size: 20px;
-      transition: all 0.2s ease;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-    
-    .util-btn:hover {
-      background: #efefef;
-      border-color: #999;
-    }
-    
-    /* Pressure Indicator */
-    #pressureIndicator {
-      position: fixed;
-      bottom: 10px;
-      left: 90px;
-      font-size: 11px;
-      color: #666;
-      background: rgba(255, 255, 255, 0.8);
-      padding: 4px 8px;
-      border-radius: 4px;
-      border: 1px solid #ddd;
     }
   </style>
 </head>
 <body>
-  <div id="stats">Zoom: 1.0x | Pressure: 0%</div>
-  <div id="pressureIndicator">Pressure: 0%</div>
+  <canvas id="canvas"></canvas>
   
-  <!-- Sidebar -->
+  <div id="stats">Zoom: 1.0x | Pressure: 0%</div>
+  
   <div id="sidebar">
-    <!-- Drawing Tools Section -->
-    <div class="tool-section">
-      <div class="section-title">Brushes</div>
-      <button class="tool-btn active" data-tool="pen" data-preset="0">
-        <span class="tool-emoji">🖊️</span>
-        <span>Pen</span>
-      </button>
-      <button class="tool-btn" data-tool="brush" data-preset="1">
-        <span class="tool-emoji">🖌️</span>
-        <span>Brush</span>
-      </button>
-      <button class="tool-btn" data-tool="marker" data-preset="2">
-        <span class="tool-emoji">🖍️</span>
-        <span>Marker</span>
-      </button>
-      <button class="tool-btn" data-tool="ink" data-preset="3">
-        <span class="tool-emoji">✒️</span>
-        <span>Ink</span>
-      </button>
-      <button class="tool-btn" data-tool="pencil" data-preset="4">
-        <span class="tool-emoji">✏️</span>
-        <span>Pencil</span>
-      </button>
-      <button class="tool-btn" data-tool="calligraphy" data-preset="5">
-        <span class="tool-emoji">🖋️</span>
-        <span>Calligraphy</span>
-      </button>
-      <button class="tool-btn" data-tool="spray" data-preset="6">
-        <span class="tool-emoji">💨</span>
-        <span>Spray</span>
-      </button>
-      <button class="tool-btn" data-tool="glitter" data-preset="7">
-        <span class="tool-emoji">✨</span>
-        <span>Glitter</span>
-      </button>
+    <div class="section">
+      <div class="section-label">Tools</div>
+      <button class="btn active" data-tool="pen"><span class="emoji">🖊️</span>Pen</button>
+      <button class="btn" data-tool="brush"><span class="emoji">🖌️</span>Brush</button>
+      <button class="btn" data-tool="marker"><span class="emoji">🖍️</span>Marker</button>
+      <button class="btn" data-tool="ink"><span class="emoji">✒️</span>Ink</button>
+      <button class="btn" data-tool="pencil"><span class="emoji">✏️</span>Pencil</button>
     </div>
     
-    <!-- Size Section -->
-    <div id="sizeSection">
-      <div class="section-title">Size</div>
-      <input type="range" id="sizeSlider" min="1" max="100" value="3">
-      <div class="size-label"><span id="sizeValue">3</span>px</div>
+    <div class="section">
+      <div class="section-label">Size</div>
+      <input type="range" id="sizeSlider" min="1" max="50" value="3">
+      <div class="size-value"><span id="sizeValue">3</span>px</div>
     </div>
     
-    <!-- Color Section -->
-    <div id="colorSection">
-      <div class="section-title">Color</div>
+    <div class="section">
+      <div class="section-label">Color</div>
       <input type="color" id="colorInput" value="#000000">
     </div>
     
-    <!-- Utility Section -->
-    <div id="utilitySection">
-      <button class="util-btn" id="colorWheelBtn" title="Color Wheel">🎨</button>
-      <button class="util-btn" id="eyedropperBtn" title="Pick Color">🔍</button>
-      <button class="util-btn" id="undoBtn" title="Undo">↶</button>
-      <button class="util-btn" id="clearBtn" title="Clear Canvas">🗑️</button>
-      <button class="util-btn" id="downloadBtn" title="Download">⬇️</button>
+    <div class="section">
+      <div class="section-label">Utilities</div>
+      <button class="btn" id="colorWheelBtn"><span class="emoji">🎨</span>Wheel</button>
+      <button class="btn" id="eyedropperBtn"><span class="emoji">🔍</span>Pick</button>
+      <button class="btn" id="undoBtn"><span class="emoji">↶</span>Undo</button>
+      <button class="btn" id="clearBtn"><span class="emoji">🗑️</span>Clear</button>
+      <button class="btn" id="downloadBtn"><span class="emoji">⬇️</span>Save</button>
     </div>
   </div>
   
-  <!-- Color Wheel Modal -->
-  <div id="colorWheelModal">
-    <div id="colorWheelContainer">
-      <h3 style="margin: 0; color: #333;">Color Wheel</h3>
-      <canvas id="colorWheel"></canvas>
+  <div id="colorWheelModal" class="modal">
+    <div class="modal-content">
+      <h2>Color Wheel</h2>
+      <canvas id="colorWheelCanvas"></canvas>
       <div id="colorPreview"></div>
-      <div class="color-wheel-controls">
-        <button class="cancel" onclick="closeColorWheel()">Cancel</button>
-        <button class="confirm" onclick="confirmColorWheel()">Use Color</button>
+      <div class="modal-buttons">
+        <button class="btn-cancel" onclick="closeColorWheel()">Cancel</button>
+        <button class="btn-confirm" onclick="confirmColorWheel()">Use Color</button>
       </div>
     </div>
   </div>
-  
-  <canvas id="c"></canvas>
 
-  <script type="module">
-    import * as PIXI from 'https://esm.sh/pixi.js@8';
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     
-    // Global State
-    let zoom = 1.0;
-    let isDrawing = false;
-    let currentPath = null;
-    let currentTool = 'pen';
-    let app, world, canvas;
+    // Resize canvas
+    function resizeCanvas() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+    
+    // State
+    let state = {
+      tool: 'pen',
+      color: '#000000',
+      size: 3,
+      zoom: 1,
+      panX: 0,
+      panY: 0,
+      isDrawing: false,
+      pressure: 0,
+      touchCount: 0,
+      lastTouchDistance: 0
+    };
+    
     let history = [];
-    let maxHistorySize = 50;
-    let selectedColorWheel = '#000000';
-    let currentPressure = 0;
-    
-    // Touch zoom state
-    let lastDistance = 0;
-    let touchStartZoom = 1.0;
-    let isTouchZoom = false;
-    
-    // Tool Presets with smooth rendering
-    const toolPresets = {
-      pen: {
-        width: 2,
-        alpha: 1,
-        opacity: 1,
-        hardness: 1,
-        scatter: 0
-      },
-      brush: {
-        width: 8,
-        alpha: 0.8,
-        opacity: 0.7,
-        hardness: 0.5,
-        scatter: 0.2
-      },
-      marker: {
-        width: 12,
-        alpha: 0.6,
-        opacity: 0.6,
-        hardness: 0.3,
-        scatter: 0.1
-      },
-      ink: {
-        width: 3,
-        alpha: 1,
-        opacity: 1,
-        hardness: 1,
-        scatter: 0
-      },
-      pencil: {
-        width: 1.5,
-        alpha: 0.9,
-        opacity: 0.6,
-        hardness: 0.8,
-        scatter: 0.3
-      },
-      calligraphy: {
-        width: 6,
-        alpha: 0.95,
-        opacity: 0.9,
-        hardness: 0.7,
-        scatter: 0.05
-      },
-      spray: {
-        width: 15,
-        alpha: 0.4,
-        opacity: 0.4,
-        hardness: 0,
-        scatter: 0.8
-      },
-      glitter: {
-        width: 10,
-        alpha: 0.7,
-        opacity: 0.5,
-        hardness: 0.2,
-        scatter: 1
-      }
-    };
-    
-    // Initialize PixiJS
-    async function init() {
-      canvas = document.getElementById('c');
-      app = new PIXI.Application();
-      
-      await app.init({
-        canvas: canvas,
-        resizeTo: window,
-        antialias: true,
-        antialiasQuality: 'high',
-        background: '#ffffff',
-        preference: 'webgpu'
-      });
-      
-      world = new PIXI.Container();
-      app.stage.addChild(world);
-      
-      setupEventListeners();
-      setupToolButtons();
-      setupUtilityButtons();
-      updateStats();
-    }
-    
-    // Setup Tool Buttons
-    function setupToolButtons() {
-      document.querySelectorAll('[data-tool]').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-          document.querySelectorAll('[data-tool]').forEach(b => b.classList.remove('active'));
-          btn.classList.add('active');
-          currentTool = btn.dataset.tool;
-          updateSizeLabel();
-        });
-      });
-      
-      // Size slider
-      document.getElementById('sizeSlider').addEventListener('input', (e) => {
-        updateSizeLabel();
-      });
-    }
-    
-    function updateSizeLabel() {
-      const size = parseInt(document.getElementById('sizeSlider').value);
-      document.getElementById('sizeValue').textContent = size;
-    }
-    
-    // Setup Utility Buttons
-    function setupUtilityButtons() {
-      document.getElementById('colorWheelBtn').addEventListener('click', openColorWheel);
-      document.getElementById('eyedropperBtn').addEventListener('click', activateEyedropper);
-      document.getElementById('undoBtn').addEventListener('click', undo);
-      document.getElementById('clearBtn').addEventListener('click', clearCanvas);
-      document.getElementById('downloadBtn').addEventListener('click', downloadCanvas);
-    }
-    
-    // Setup Event Listeners
-    function setupEventListeners() {
-      // Drawing - only with pointer (pen/mouse/single touch)
-      canvas.addEventListener('pointerdown', handlePointerDown);
-      canvas.addEventListener('pointermove', handlePointerMove);
-      canvas.addEventListener('pointerup', handlePointerUp);
-      canvas.addEventListener('pointerleave', handlePointerUp);
-      canvas.addEventListener('pointercancel', handlePointerUp);
-      
-      // Touch zoom (pinch) - only with 2 fingers
-      canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
-      canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
-      canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
-      
-      // Mouse wheel zoom
-      canvas.addEventListener('wheel', handleWheel, { passive: false });
-      
-      // Pan
-      let isPanning = false;
-      let lastX = 0;
-      let lastY = 0;
-      
-      canvas.addEventListener('pointerdown', (e) => {
-        if (e.button === 2 || (e.button === 0 && e.ctrlKey)) {
-          isPanning = true;
-          lastX = e.clientX;
-          lastY = e.clientY;
-        }
-      });
-      
-      canvas.addEventListener('pointermove', (e) => {
-        if (isPanning) {
-          world.x += e.clientX - lastX;
-          world.y += e.clientY - lastY;
-          lastX = e.clientX;
-          lastY = e.clientY;
-        }
-      });
-      
-      canvas.addEventListener('pointerup', () => {
-        isPanning = false;
-      });
-      
-      canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-      
-      window.addEventListener('resize', updateStats);
-    }
-    
-    // Touch Zoom Handlers (ONLY with 2+ fingers)
-    function getTouchDistance(touches) {
-      if (touches.length < 2) return 0;
-      const dx = touches[0].clientX - touches[1].clientX;
-      const dy = touches[0].clientY - touches[1].clientY;
-      return Math.sqrt(dx * dx + dy * dy);
-    }
-    
-    function getTouchCenter(touches) {
-      const x = (touches[0].clientX + touches[1].clientX) / 2;
-      const y = (touches[0].clientY + touches[1].clientY) / 2;
-      return { x, y };
-    }
-    
-    function handleTouchStart(e) {
-      // Only handle pinch zoom with 2+ fingers
-      if (e.touches.length >= 2) {
-        isTouchZoom = true;
-        isDrawing = false;
-        lastDistance = getTouchDistance(e.touches);
-        touchStartZoom = zoom;
-      } else if (e.touches.length === 1) {
-        isTouchZoom = false;
-        // Single touch will be handled by pointerdown
-      }
-    }
-    
-    function handleTouchMove(e) {
-      // Only zoom with 2+ fingers
-      if (e.touches.length >= 2 && isTouchZoom) {
-        e.preventDefault();
-        const currentDistance = getTouchDistance(e.touches);
-        
-        if (lastDistance > 0) {
-          const ratio = currentDistance / lastDistance;
-          
-          // More controlled zoom sensitivity
-          const zoomFactor = Math.pow(ratio, 1.5);
-          
-          const center = getTouchCenter(e.touches);
-          const mousePos = new PIXI.Point(center.x, center.y);
-          const worldPos = world.toLocal(mousePos);
-          
-          zoom = touchStartZoom * zoomFactor;
-          zoom = Math.max(0.1, Math.min(zoom, 100));
-          
-          world.scale.set(zoom);
-          
-          const newMousePos = world.toGlobal(worldPos);
-          world.x -= newMousePos.x - mousePos.x;
-          world.y -= newMousePos.y - mousePos.y;
-          
-          updateStats();
-        }
-      } else if (e.touches.length === 1 && !isTouchZoom) {
-        // Single touch drawing - handled by pointermove
-      }
-    }
-    
-    function handleTouchEnd(e) {
-      if (e.touches.length < 2) {
-        isTouchZoom = false;
-        lastDistance = 0;
-      }
-    }
-    
-    // Pointer Events - ONLY single touch/pen/mouse
-    function handlePointerDown(e) {
-      // Ignore if multiple touches
-      if (e.isPrimary === false || isTouchZoom) return;
-      
-      if (e.button !== 0 || e.ctrlKey) return;
-      
-      isDrawing = true;
-      saveHistory();
-      
-      currentPath = new PIXI.Graphics();
-      world.addChild(currentPath);
-      
-      const pos = world.toLocal(new PIXI.Point(e.clientX, e.clientY));
-      currentPath.moveTo(pos.x, pos.y);
-      
-      // Detect pressure
-      currentPressure = e.pressure || 0.5;
-      updatePressureDisplay();
-    }
-    
-    function handlePointerMove(e) {
-      if (!isDrawing || !currentPath || !e.isPrimary || isTouchZoom) return;
-      
-      const pos = world.toLocal(new PIXI.Point(e.clientX, e.clientY));
-      const color = document.getElementById('colorInput').value;
-      const size = parseInt(document.getElementById('sizeSlider').value);
-      const preset = toolPresets[currentTool];
-      
-      // Get pressure (0 to 1)
-      currentPressure = e.pressure || 0.5;
-      
-      // Apply pressure to width and opacity
-      const pressureMultiplier = Math.pow(currentPressure, 0.8);
-      const width = (size * preset.width * pressureMultiplier) / zoom;
-      const alpha = preset.alpha * pressureMultiplier;
-      
-      currentPath.lineTo(pos.x, pos.y);
-      currentPath.stroke({
-        width: Math.max(0.5, width),
-        color: color,
-        cap: 'round',
-        join: 'round',
-        alpha: alpha
-      });
-      
-      updatePressureDisplay();
-    }
-    
-    function handlePointerUp(e) {
-      if (!e.isPrimary) return;
-      isDrawing = false;
-      currentPath = null;
-      currentPressure = 0;
-      updatePressureDisplay();
-    }
-    
-    // Wheel Zoom - More controlled
-    function handleWheel(e) {
-      e.preventDefault();
-      
-      // More subtle zoom
-      const zoomFactor = Math.pow(0.98, e.deltaY / 100);
-      const mousePos = new PIXI.Point(e.clientX, e.clientY);
-      const worldPos = world.toLocal(mousePos);
-      
-      zoom *= zoomFactor;
-      zoom = Math.max(0.1, Math.min(zoom, 100));
-      
-      world.scale.set(zoom);
-      
-      const newMousePos = world.toGlobal(worldPos);
-      world.x -= newMousePos.x - mousePos.x;
-      world.y -= newMousePos.y - mousePos.y;
-      
-      updateStats();
-    }
-    
-    // Color Wheel
-    function openColorWheel() {
-      document.getElementById('colorWheelModal').classList.add('active');
-      drawColorWheel();
-    }
-    
-    window.closeColorWheel = function() {
-      document.getElementById('colorWheelModal').classList.remove('active');
-    };
-    
-    window.confirmColorWheel = function() {
-      document.getElementById('colorInput').value = selectedColorWheel;
-      document.getElementById('colorWheelModal').classList.remove('active');
-    };
-    
-    function drawColorWheel() {
-      const canvas = document.getElementById('colorWheel');
-      const ctx = canvas.getContext('2d');
-      const centerX = canvas.width / 2;
-      const centerY = canvas.height / 2;
-      const radius = Math.min(centerX, centerY) - 10;
-      
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      
-      // Draw color wheel
-      for (let angle = 0; angle < 360; angle += 1) {
-        const startAngle = (angle - 1) * Math.PI / 180;
-        const endAngle = angle * Math.PI / 180;
-        
-        for (let r = 0; r < radius; r += 2) {
-          const hue = angle;
-          const saturation = 100 * (r / radius);
-          const lightness = 50;
-          const color = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
-          
-          ctx.fillStyle = color;
-          ctx.beginPath();
-          ctx.moveTo(centerX, centerY);
-          ctx.arc(centerX, centerY, r, startAngle, endAngle);
-          ctx.closePath();
-          ctx.fill();
-        }
-      }
-      
-      // Click handler
-      canvas.addEventListener('click', (e) => {
-        const rect = canvas.getBoundingClientRect();
-        const x = e.clientX - rect.left - centerX;
-        const y = e.clientY - rect.top - centerY;
-        const distance = Math.sqrt(x * x + y * y);
-        
-        if (distance < radius) {
-          const angle = Math.atan2(y, x) * 180 / Math.PI + 180;
-          const saturation = 100 * (distance / radius);
-          const hue = angle;
-          selectedColorWheel = `hsl(${hue}, ${saturation}%, 50%)`;
-          
-          document.getElementById('colorPreview').style.background = selectedColorWheel;
-        }
-      });
-    }
-    
-    // Eyedropper
+    let selectedColor = '#000000';
     let eyedropperActive = false;
-    function activateEyedropper() {
-      eyedropperActive = !eyedropperActive;
-      canvas.style.cursor = eyedropperActive ? 'crosshair' : 'crosshair';
+    
+    // Tool settings
+    const tools = {
+      pen: { width: 1.2, opacity: 1 },
+      brush: { width: 3, opacity: 0.7 },
+      marker: { width: 5, opacity: 0.6 },
+      ink: { width: 1.5, opacity: 1 },
+      pencil: { width: 0.8, opacity: 0.8 }
+    };
+    
+    // Drawing
+    function drawLine(fromX, fromY, toX, toY, pressure = 1) {
+      const tool = tools[state.tool];
+      const width = state.size * tool.width * pressure;
+      const opacity = tool.opacity * pressure;
       
-      if (eyedropperActive) {
-        document.getElementById('eyedropperBtn').style.background = '#333';
-        document.getElementById('eyedropperBtn').style.color = 'white';
-        
-        canvas.addEventListener('click', pickColorFromCanvas);
-      } else {
-        document.getElementById('eyedropperBtn').style.background = 'white';
-        document.getElementById('eyedropperBtn').style.color = '#333';
-        canvas.removeEventListener('click', pickColorFromCanvas);
-      }
+      ctx.strokeStyle = state.color;
+      ctx.lineWidth = Math.max(0.5, width);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.globalAlpha = opacity;
+      
+      ctx.beginPath();
+      ctx.moveTo(fromX, fromY);
+      ctx.lineTo(toX, toY);
+      ctx.stroke();
+      
+      ctx.globalAlpha = 1;
     }
     
-    function pickColorFromCanvas(e) {
-      const texture = app.renderer.generateTexture(world);
-      const canvasEl = texture.source.resource;
-      const ctx = canvasEl.getContext('2d');
-      
-      const rect = document.getElementById('c').getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
-      
-      const imageData = ctx.getImageData(x, y, 1, 1);
-      const [r, g, b] = imageData.data;
-      
-      const hex = '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('').toUpperCase();
-      document.getElementById('colorInput').value = hex;
-      
-      texture.destroy(true);
-      eyedropperActive = false;
-      document.getElementById('eyedropperBtn').style.background = 'white';
-      document.getElementById('eyedropperBtn').style.color = '#333';
-    }
-    
-    // History
     function saveHistory() {
-      const texture = app.renderer.generateTexture(world);
-      history.push(texture);
-      
-      if (history.length > maxHistorySize) {
-        history[0].destroy(true);
-        history.shift();
-      }
+      history.push(canvas.toDataURL());
+      if (history.length > 50) history.shift();
     }
     
     function undo() {
       if (history.length > 0) {
-        world.removeChildren();
-        const lastState = history.pop();
-        const sprite = new PIXI.Sprite(lastState);
-        world.addChild(sprite);
+        const img = new Image();
+        img.onload = () => {
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, 0, 0);
+        };
+        img.src = history.pop();
       }
     }
     
-    // UI Functions
-    function clearCanvas() {
-      if (confirm('Clear the entire canvas?')) {
-        world.removeChildren();
+    // Pointer events (drawing with single pointer only)
+    let lastX = 0, lastY = 0;
+    
+    canvas.addEventListener('pointerdown', (e) => {
+      if (state.touchCount > 0 && e.pointerType === 'touch') return; // Ignore if already multi-touch
+      if (e.button !== 0) return;
+      
+      state.isDrawing = true;
+      state.pressure = e.pressure || 0.5;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      
+      saveHistory();
+      updateStats();
+    });
+    
+    canvas.addEventListener('pointermove', (e) => {
+      if (!state.isDrawing || e.isPrimary === false) return;
+      
+      state.pressure = e.pressure || 0.5;
+      
+      const dx = e.clientX - lastX;
+      const dy = e.clientY - lastY;
+      
+      if (!eyedropperActive) {
+        drawLine(lastX, lastY, e.clientX, e.clientY, state.pressure);
+      }
+      
+      lastX = e.clientX;
+      lastY = e.clientY;
+      
+      updateStats();
+    });
+    
+    canvas.addEventListener('pointerup', (e) => {
+      state.isDrawing = false;
+      state.pressure = 0;
+      updateStats();
+    });
+    
+    canvas.addEventListener('pointerleave', () => {
+      state.isDrawing = false;
+      state.pressure = 0;
+    });
+    
+    // Touch events for pinch zoom (2 fingers only)
+    canvas.addEventListener('touchstart', (e) => {
+      state.touchCount = e.touches.length;
+      
+      if (e.touches.length === 2) {
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        state.lastTouchDistance = Math.sqrt(dx * dx + dy * dy);
+      }
+    }, { passive: true });
+    
+    canvas.addEventListener('touchmove', (e) => {
+      if (e.touches.length >= 2) {
+        e.preventDefault();
+        
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        const currentDistance = Math.sqrt(dx * dx + dy * dy);
+        
+        if (state.lastTouchDistance > 0) {
+          const ratio = currentDistance / state.lastTouchDistance;
+          state.zoom *= ratio;
+          state.zoom = Math.max(0.1, Math.min(state.zoom, 100));
+          
+          // Pan to center point
+          const centerX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+          const centerY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+          
+          state.lastTouchDistance = currentDistance;
+          updateStats();
+        }
+      }
+    }, { passive: false });
+    
+    canvas.addEventListener('touchend', (e) => {
+      state.touchCount = e.touches.length;
+      state.lastTouchDistance = 0;
+    }, { passive: true });
+    
+    // Mouse wheel zoom
+    canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      
+      const delta = e.deltaY > 0 ? 0.95 : 1.05;
+      state.zoom *= delta;
+      state.zoom = Math.max(0.1, Math.min(state.zoom, 100));
+      
+      updateStats();
+    }, { passive: false });
+    
+    // Right-click pan
+    let isPanning = false;
+    let panStartX = 0, panStartY = 0;
+    
+    canvas.addEventListener('mousedown', (e) => {
+      if (e.button === 2) {
+        isPanning = true;
+        panStartX = e.clientX;
+        panStartY = e.clientY;
+      }
+    });
+    
+    canvas.addEventListener('mousemove', (e) => {
+      if (isPanning) {
+        state.panX += e.clientX - panStartX;
+        state.panY += e.clientY - panStartY;
+        panStartX = e.clientX;
+        panStartY = e.clientY;
+      }
+    });
+    
+    canvas.addEventListener('mouseup', () => {
+      isPanning = false;
+    });
+    
+    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    
+    // UI Controls
+    document.querySelectorAll('[data-tool]').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        document.querySelectorAll('[data-tool]').forEach(b => b.classList.remove('active'));
+        e.target.closest('.btn').classList.add('active');
+        state.tool = e.target.closest('.btn').dataset.tool;
+      });
+    });
+    
+    document.getElementById('sizeSlider').addEventListener('input', (e) => {
+      state.size = parseInt(e.target.value);
+      document.getElementById('sizeValue').textContent = state.size;
+    });
+    
+    document.getElementById('colorInput').addEventListener('change', (e) => {
+      state.color = e.target.value;
+    });
+    
+    document.getElementById('colorWheelBtn').addEventListener('click', () => {
+      document.getElementById('colorWheelModal').classList.add('active');
+      drawColorWheel();
+    });
+    
+    document.getElementById('eyedropperBtn').addEventListener('click', () => {
+      eyedropperActive = !eyedropperActive;
+      canvas.style.cursor = eyedropperActive ? 'crosshair' : 'default';
+      document.getElementById('eyedropperBtn').classList.toggle('active');
+      
+      if (eyedropperActive) {
+        canvas.addEventListener('click', pickColor);
+      }
+    });
+    
+    document.getElementById('undoBtn').addEventListener('click', undo);
+    document.getElementById('clearBtn').addEventListener('click', () => {
+      if (confirm('Clear canvas?')) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
         history = [];
       }
-    }
+    });
     
-    function downloadCanvas() {
-      const texture = app.renderer.generateTexture(world);
-      const canvasEl = texture.source.resource;
+    document.getElementById('downloadBtn').addEventListener('click', () => {
       const link = document.createElement('a');
-      link.href = canvasEl.toDataURL();
-      link.download = `infinite-canvas-${Date.now()}.png`;
+      link.href = canvas.toDataURL();
+      link.download = `canvas-${Date.now()}.png`;
       link.click();
-      texture.destroy(true);
+    });
+    
+    // Color wheel
+    function drawColorWheel() {
+      const wheelCanvas = document.getElementById('colorWheelCanvas');
+      const wheelCtx = wheelCanvas.getContext('2d');
+      const centerX = wheelCanvas.width / 2;
+      const centerY = wheelCanvas.height / 2;
+      const radius = 140;
+      
+      wheelCtx.clearRect(0, 0, wheelCanvas.width, wheelCanvas.height);
+      
+      for (let angle = 0; angle < 360; angle++) {
+        for (let r = 0; r < radius; r++) {
+          const hue = angle;
+          const saturation = 100 * (r / radius);
+          wheelCtx.fillStyle = `hsl(${hue}, ${saturation}%, 50%)`;
+          wheelCtx.beginPath();
+          wheelCtx.arc(centerX, centerY, r, angle * Math.PI / 180, (angle + 1) * Math.PI / 180);
+          wheelCtx.lineTo(centerX, centerY);
+          wheelCtx.fill();
+        }
+      }
+      
+      wheelCanvas.addEventListener('click', selectColorFromWheel);
     }
     
-    function updatePressureDisplay() {
-      const pressurePercent = Math.round(currentPressure * 100);
-      document.getElementById('pressureIndicator').textContent = `Pressure: ${pressurePercent}%`;
-      document.getElementById('stats').innerHTML = `Zoom: ${zoom.toFixed(2)}x | Pressure: ${pressurePercent}%`;
+    function selectColorFromWheel(e) {
+      const rect = e.target.getBoundingClientRect();
+      const centerX = rect.width / 2;
+      const centerY = rect.height / 2;
+      const x = e.clientX - rect.left - centerX;
+      const y = e.clientY - rect.top - centerY;
+      const angle = Math.atan2(y, x) * 180 / Math.PI + 180;
+      const distance = Math.sqrt(x * x + y * y);
+      const saturation = 100 * Math.min(distance / 140, 1);
+      
+      selectedColor = `hsl(${angle}, ${saturation}%, 50%)`;
+      document.getElementById('colorPreview').style.background = selectedColor;
+    }
+    
+    window.closeColorWheel = () => {
+      document.getElementById('colorWheelModal').classList.remove('active');
+    };
+    
+    window.confirmColorWheel = () => {
+      state.color = selectedColor;
+      document.getElementById('colorInput').value = selectedColor;
+      document.getElementById('colorWheelModal').classList.remove('active');
+    };
+    
+    function pickColor(e) {
+      const imageData = ctx.getImageData(e.clientX, e.clientY, 1, 1);
+      const [r, g, b] = imageData.data;
+      const hex = '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('').toUpperCase();
+      state.color = hex;
+      document.getElementById('colorInput').value = hex;
+      eyedropperActive = false;
+      canvas.style.cursor = 'default';
+      document.getElementById('eyedropperBtn').classList.remove('active');
+      canvas.removeEventListener('click', pickColor);
     }
     
     function updateStats() {
-      const pressurePercent = Math.round(currentPressure * 100);
-      document.getElementById('stats').innerHTML = `Zoom: ${zoom.toFixed(2)}x | Pressure: ${pressurePercent}%`;
+      const pressurePercent = Math.round(state.pressure * 100);
+      document.getElementById('stats').textContent = `Zoom: ${state.zoom.toFixed(2)}x | Pressure: ${pressurePercent}%`;
     }
     
-    // Initialize
-    init();
+    // Initial fill
+    ctx.fillStyle = 'white';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
   </script>
 </body>
 </html>
