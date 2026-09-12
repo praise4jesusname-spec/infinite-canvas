@@ -3,14 +3,18 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Infinite Zoom Canvas</title>
+  <title>Infinite Canvas - Drawing Studio</title>
   <style>
+    * {
+      box-sizing: border-box;
+    }
+    
     body, html {
       margin: 0;
       padding: 0;
       overflow: hidden;
       height: 100%;
-      background: #121212;
+      background: #ffffff;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     }
     
@@ -23,83 +27,343 @@
     #stats {
       position: fixed;
       top: 10px;
-      left: 10px;
-      color: #666;
+      right: 10px;
+      color: #999;
       font-size: 12px;
       pointer-events: none;
       font-family: 'Courier New', monospace;
+      background: rgba(255, 255, 255, 0.8);
+      padding: 8px 12px;
+      border-radius: 4px;
+      border: 1px solid #ddd;
     }
     
-    #ui {
+    /* Left Sidebar */
+    #sidebar {
       position: fixed;
-      bottom: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(30, 30, 30, 0.95);
-      padding: 15px 25px;
-      border-radius: 50px;
+      left: 0;
+      top: 0;
+      width: 80px;
+      height: 100%;
+      background: #f5f5f5;
+      border-right: 1px solid #ddd;
       display: flex;
-      gap: 15px;
-      align-items: center;
-      border: 1px solid #444;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-      backdrop-filter: blur(10px);
+      flex-direction: column;
+      padding: 15px 0;
+      gap: 10px;
+      overflow-y: auto;
+      z-index: 100;
     }
     
-    .btn {
-      background: #333;
-      border: none;
-      color: white;
-      padding: 10px 12px;
-      border-radius: 50%;
-      cursor: pointer;
-      font-size: 18px;
-      transition: background 0.2s ease;
+    .tool-section {
       display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 0 8px;
+      border-bottom: 1px solid #e0e0e0;
+      padding-bottom: 12px;
+    }
+    
+    .tool-section:last-child {
+      border-bottom: none;
+    }
+    
+    .section-title {
+      font-size: 10px;
+      font-weight: 600;
+      color: #666;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 0 5px;
+    }
+    
+    .tool-btn {
+      width: 64px;
+      height: 56px;
+      border: 2px solid transparent;
+      background: white;
+      border-radius: 6px;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
-      width: 40px;
-      height: 40px;
+      gap: 4px;
+      font-size: 12px;
+      color: #333;
+      transition: all 0.2s ease;
+      font-weight: 500;
     }
     
-    .btn:hover {
+    .tool-btn:hover {
+      background: #efefef;
+      border-color: #ddd;
+    }
+    
+    .tool-btn.active {
+      background: #333;
+      color: white;
+      border-color: #333;
+    }
+    
+    .tool-emoji {
+      font-size: 24px;
+    }
+    
+    /* Color Picker */
+    #colorSection {
+      padding: 12px 8px;
+      border-top: 1px solid #e0e0e0;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    
+    #colorInput {
+      width: 64px;
+      height: 40px;
+      border: 2px solid #ddd;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    
+    #colorInput:hover {
+      border-color: #999;
+    }
+    
+    /* Color Wheel Modal */
+    #colorWheelModal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.5);
+      z-index: 1000;
+      justify-content: center;
+      align-items: center;
+    }
+    
+    #colorWheelModal.active {
+      display: flex;
+    }
+    
+    #colorWheelContainer {
+      background: white;
+      padding: 30px;
+      border-radius: 12px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    
+    #colorWheel {
+      width: 300px;
+      height: 300px;
+      border-radius: 50%;
+      cursor: crosshair;
+    }
+    
+    #colorPreview {
+      width: 100%;
+      height: 60px;
+      border-radius: 6px;
+      border: 2px solid #ddd;
+    }
+    
+    .color-wheel-controls {
+      display: flex;
+      gap: 10px;
+      justify-content: center;
+    }
+    
+    .color-wheel-controls button {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: background 0.2s ease;
+    }
+    
+    .color-wheel-controls button.confirm {
+      background: #333;
+      color: white;
+    }
+    
+    .color-wheel-controls button.confirm:hover {
       background: #555;
     }
     
-    .btn:active {
-      background: #777;
+    .color-wheel-controls button.cancel {
+      background: #ddd;
+      color: #333;
     }
     
-    #color {
-      width: 40px;
-      height: 40px;
-      border: none;
+    .color-wheel-controls button.cancel:hover {
+      background: #bbb;
+    }
+    
+    /* Size Slider */
+    #sizeSection {
+      padding: 12px 8px;
+      border-bottom: 1px solid #e0e0e0;
+    }
+    
+    #sizeSlider {
+      width: 60px;
+      height: 4px;
+      border-radius: 2px;
+      outline: none;
+      -webkit-appearance: none;
+      appearance: none;
+      background: #ddd;
+    }
+    
+    #sizeSlider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 12px;
+      height: 12px;
       border-radius: 50%;
+      background: #333;
       cursor: pointer;
-      transition: transform 0.2s ease;
     }
     
-    #color:hover {
-      transform: scale(1.1);
+    #sizeSlider::-moz-range-thumb {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #333;
+      cursor: pointer;
+      border: none;
     }
     
-    .tool-label {
-      color: #999;
-      font-size: 11px;
+    .size-label {
+      font-size: 10px;
+      color: #666;
       text-align: center;
-      margin-top: 2px;
+      margin-top: 4px;
+    }
+    
+    /* Utility Buttons */
+    #utilitySection {
+      padding: 12px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    
+    .util-btn {
+      width: 64px;
+      height: 40px;
+      border: 2px solid #ddd;
+      background: white;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 20px;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .util-btn:hover {
+      background: #efefef;
+      border-color: #999;
+    }
+    
+    /* Tooltip */
+    .tooltip {
+      position: absolute;
+      background: #333;
+      color: white;
+      padding: 6px 10px;
+      border-radius: 4px;
+      font-size: 11px;
+      white-space: nowrap;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.2s ease;
     }
   </style>
 </head>
 <body>
-  <div id="stats">Zoom: 1.0x | Resolution: 0x0</div>
+  <div id="stats">Zoom: 1.0x | Touch: Pinch to zoom</div>
   
-  <div id="ui">
-    <button class="btn" onclick="clearCanvas()" title="Clear Canvas">🗑️</button>
-    <input type="color" id="color" value="#ffffff" title="Pick Color">
-    <button class="btn active-tool" id="penBtn" onclick="setTool('pen')" title="Pen">🖊️</button>
-    <button class="btn" id="brushBtn" onclick="setTool('brush')" title="Brush">🖌️</button>
-    <button class="btn" onclick="downloadCanvas()" title="Download">⬇️</button>
+  <!-- Sidebar -->
+  <div id="sidebar">
+    <!-- Drawing Tools Section -->
+    <div class="tool-section">
+      <div class="section-title">Brushes</div>
+      <button class="tool-btn active" data-tool="pen" data-preset="0">
+        <span class="tool-emoji">🖊️</span>
+        <span>Pen</span>
+      </button>
+      <button class="tool-btn" data-tool="brush" data-preset="1">
+        <span class="tool-emoji">🖌️</span>
+        <span>Brush</span>
+      </button>
+      <button class="tool-btn" data-tool="marker" data-preset="2">
+        <span class="tool-emoji">🖍️</span>
+        <span>Marker</span>
+      </button>
+      <button class="tool-btn" data-tool="ink" data-preset="3">
+        <span class="tool-emoji">✒️</span>
+        <span>Ink</span>
+      </button>
+      <button class="tool-btn" data-tool="pencil" data-preset="4">
+        <span class="tool-emoji">✏️</span>
+        <span>Pencil</span>
+      </button>
+      <button class="tool-btn" data-tool="calligraphy" data-preset="5">
+        <span class="tool-emoji">🖋️</span>
+        <span>Calligraphy</span>
+      </button>
+      <button class="tool-btn" data-tool="spray" data-preset="6">
+        <span class="tool-emoji">💨</span>
+        <span>Spray</span>
+      </button>
+      <button class="tool-btn" data-tool="glitter" data-preset="7">
+        <span class="tool-emoji">✨</span>
+        <span>Glitter</span>
+      </button>
+    </div>
+    
+    <!-- Size Section -->
+    <div id="sizeSection">
+      <div class="section-title">Size</div>
+      <input type="range" id="sizeSlider" min="1" max="100" value="3">
+      <div class="size-label"><span id="sizeValue">3</span>px</div>
+    </div>
+    
+    <!-- Color Section -->
+    <div id="colorSection">
+      <div class="section-title">Color</div>
+      <input type="color" id="colorInput" value="#000000">
+    </div>
+    
+    <!-- Utility Section -->
+    <div id="utilitySection">
+      <button class="util-btn" id="colorWheelBtn" title="Color Wheel">🎨</button>
+      <button class="util-btn" id="eyedropperBtn" title="Pick Color">🔍</button>
+      <button class="util-btn" id="undoBtn" title="Undo">↶</button>
+      <button class="util-btn" id="clearBtn" title="Clear Canvas">🗑️</button>
+      <button class="util-btn" id="downloadBtn" title="Download">⬇️</button>
+    </div>
+  </div>
+  
+  <!-- Color Wheel Modal -->
+  <div id="colorWheelModal">
+    <div id="colorWheelContainer">
+      <h3 style="margin: 0; color: #333;">Color Wheel</h3>
+      <canvas id="colorWheel"></canvas>
+      <div id="colorPreview"></div>
+      <div class="color-wheel-controls">
+        <button class="cancel" onclick="closeColorWheel()">Cancel</button>
+        <button class="confirm" onclick="confirmColorWheel()">Use Color</button>
+      </div>
+    </div>
   </div>
   
   <canvas id="c"></canvas>
@@ -113,11 +377,72 @@
     let currentPath = null;
     let currentTool = 'pen';
     let app, world, canvas;
+    let history = [];
+    let maxHistorySize = 50;
+    let selectedColorWheel = '#000000';
     
-    // Tool Settings
-    const toolSettings = {
-      pen: { width: 2, alpha: 1 },
-      brush: { width: 8, alpha: 0.7 }
+    // Touch zoom state
+    let lastDistance = 0;
+    let touchStartZoom = 1.0;
+    
+    // Tool Presets with smooth rendering
+    const toolPresets = {
+      pen: {
+        width: 2,
+        alpha: 1,
+        opacity: 1,
+        hardness: 1,
+        scatter: 0
+      },
+      brush: {
+        width: 8,
+        alpha: 0.8,
+        opacity: 0.7,
+        hardness: 0.5,
+        scatter: 0.2
+      },
+      marker: {
+        width: 12,
+        alpha: 0.6,
+        opacity: 0.6,
+        hardness: 0.3,
+        scatter: 0.1
+      },
+      ink: {
+        width: 3,
+        alpha: 1,
+        opacity: 1,
+        hardness: 1,
+        scatter: 0
+      },
+      pencil: {
+        width: 1.5,
+        alpha: 0.9,
+        opacity: 0.6,
+        hardness: 0.8,
+        scatter: 0.3
+      },
+      calligraphy: {
+        width: 6,
+        alpha: 0.95,
+        opacity: 0.9,
+        hardness: 0.7,
+        scatter: 0.05
+      },
+      spray: {
+        width: 15,
+        alpha: 0.4,
+        opacity: 0.4,
+        hardness: 0,
+        scatter: 0.8
+      },
+      glitter: {
+        width: 10,
+        alpha: 0.7,
+        opacity: 0.5,
+        hardness: 0.2,
+        scatter: 1
+      }
     };
     
     // Initialize PixiJS
@@ -129,7 +454,8 @@
         canvas: canvas,
         resizeTo: window,
         antialias: true,
-        background: '#121212',
+        antialiasQuality: 'high',
+        background: '#ffffff',
         preference: 'webgpu'
       });
       
@@ -137,7 +463,40 @@
       app.stage.addChild(world);
       
       setupEventListeners();
+      setupToolButtons();
+      setupUtilityButtons();
       updateStats();
+    }
+    
+    // Setup Tool Buttons
+    function setupToolButtons() {
+      document.querySelectorAll('[data-tool]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          document.querySelectorAll('[data-tool]').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          currentTool = btn.dataset.tool;
+          updateSizeLabel();
+        });
+      });
+      
+      // Size slider
+      document.getElementById('sizeSlider').addEventListener('input', (e) => {
+        updateSizeLabel();
+      });
+    }
+    
+    function updateSizeLabel() {
+      const size = parseInt(document.getElementById('sizeSlider').value);
+      document.getElementById('sizeValue').textContent = size;
+    }
+    
+    // Setup Utility Buttons
+    function setupUtilityButtons() {
+      document.getElementById('colorWheelBtn').addEventListener('click', openColorWheel);
+      document.getElementById('eyedropperBtn').addEventListener('click', activateEyedropper);
+      document.getElementById('undoBtn').addEventListener('click', undo);
+      document.getElementById('clearBtn').addEventListener('click', clearCanvas);
+      document.getElementById('downloadBtn').addEventListener('click', downloadCanvas);
     }
     
     // Setup Event Listeners
@@ -148,10 +507,15 @@
       canvas.addEventListener('pointerup', handlePointerUp);
       canvas.addEventListener('pointerleave', handlePointerUp);
       
-      // Zoom
+      // Touch zoom (pinch)
+      canvas.addEventListener('touchstart', handleTouchStart, { passive: false });
+      canvas.addEventListener('touchmove', handleTouchMove, { passive: false });
+      canvas.addEventListener('touchend', handleTouchEnd, { passive: false });
+      
+      // Mouse wheel zoom
       canvas.addEventListener('wheel', handleWheel, { passive: false });
       
-      // Pan with Middle Mouse Button or Space + Drag
+      // Pan
       let isPanning = false;
       let lastX = 0;
       let lastY = 0;
@@ -179,8 +543,58 @@
       
       canvas.addEventListener('contextmenu', (e) => e.preventDefault());
       
-      // Window resize
       window.addEventListener('resize', updateStats);
+    }
+    
+    // Touch Zoom Handlers
+    function getTouchDistance(touches) {
+      if (touches.length < 2) return 0;
+      const dx = touches[0].clientX - touches[1].clientX;
+      const dy = touches[0].clientY - touches[1].clientY;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+    
+    function getTouchCenter(touches) {
+      const x = (touches[0].clientX + touches[1].clientX) / 2;
+      const y = (touches[0].clientY + touches[1].clientY) / 2;
+      return { x, y };
+    }
+    
+    function handleTouchStart(e) {
+      if (e.touches.length === 2) {
+        lastDistance = getTouchDistance(e.touches);
+        touchStartZoom = zoom;
+      }
+    }
+    
+    function handleTouchMove(e) {
+      if (e.touches.length === 2) {
+        e.preventDefault();
+        const currentDistance = getTouchDistance(e.touches);
+        const ratio = currentDistance / lastDistance;
+        
+        // Increase sensitivity
+        const zoomFactor = Math.pow(ratio, 2.5);
+        
+        const center = getTouchCenter(e.touches);
+        const mousePos = new PIXI.Point(center.x, center.y);
+        const worldPos = world.toLocal(mousePos);
+        
+        zoom = touchStartZoom * zoomFactor;
+        zoom = Math.max(0.1, Math.min(zoom, 100));
+        
+        world.scale.set(zoom);
+        
+        const newMousePos = world.toGlobal(worldPos);
+        world.x -= newMousePos.x - mousePos.x;
+        world.y -= newMousePos.y - mousePos.y;
+        
+        updateStats();
+      }
+    }
+    
+    function handleTouchEnd() {
+      lastDistance = 0;
     }
     
     // Pointer Events
@@ -188,6 +602,8 @@
       if (e.button !== 0 || e.ctrlKey) return;
       
       isDrawing = true;
+      saveHistory();
+      
       currentPath = new PIXI.Graphics();
       world.addChild(currentPath);
       
@@ -196,19 +612,22 @@
     }
     
     function handlePointerMove(e) {
-      if (!isDrawing) return;
+      if (!isDrawing || !currentPath) return;
       
       const pos = world.toLocal(new PIXI.Point(e.clientX, e.clientY));
-      const color = document.getElementById('color').value;
-      const settings = toolSettings[currentTool];
+      const color = document.getElementById('colorInput').value;
+      const size = parseInt(document.getElementById('sizeSlider').value);
+      const preset = toolPresets[currentTool];
+      
+      const width = (size * preset.width) / zoom;
       
       currentPath.lineTo(pos.x, pos.y);
       currentPath.stroke({
-        width: settings.width / zoom,
+        width: width,
         color: color,
         cap: 'round',
         join: 'round',
-        alpha: settings.alpha
+        alpha: preset.alpha
       });
     }
     
@@ -217,16 +636,16 @@
       currentPath = null;
     }
     
-    // Zoom Handler
+    // Wheel Zoom
     function handleWheel(e) {
       e.preventDefault();
       
-      const zoomFactor = Math.pow(0.999, e.deltaY);
+      const zoomFactor = Math.pow(0.95, e.deltaY / 100);
       const mousePos = new PIXI.Point(e.clientX, e.clientY);
       const worldPos = world.toLocal(mousePos);
       
       zoom *= zoomFactor;
-      zoom = Math.max(0.1, Math.min(zoom, 100)); // Clamp zoom
+      zoom = Math.max(0.1, Math.min(zoom, 100));
       
       world.scale.set(zoom);
       
@@ -237,21 +656,136 @@
       updateStats();
     }
     
-    // UI Functions
-    window.clearCanvas = function() {
-      world.removeChildren();
-      updateStats();
+    // Color Wheel
+    function openColorWheel() {
+      document.getElementById('colorWheelModal').classList.add('active');
+      drawColorWheel();
+    }
+    
+    window.closeColorWheel = function() {
+      document.getElementById('colorWheelModal').classList.remove('active');
     };
     
-    window.setTool = function(tool) {
-      currentTool = tool;
-      document.querySelectorAll('.btn.active-tool').forEach(btn => {
-        btn.classList.remove('active-tool');
+    window.confirmColorWheel = function() {
+      document.getElementById('colorInput').value = selectedColorWheel;
+      document.getElementById('colorWheelModal').classList.remove('active');
+    };
+    
+    function drawColorWheel() {
+      const canvas = document.getElementById('colorWheel');
+      const ctx = canvas.getContext('2d');
+      const centerX = canvas.width / 2;
+      const centerY = canvas.height / 2;
+      const radius = Math.min(centerX, centerY) - 10;
+      
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      // Draw color wheel
+      for (let angle = 0; angle < 360; angle += 1) {
+        const startAngle = (angle - 1) * Math.PI / 180;
+        const endAngle = angle * Math.PI / 180;
+        
+        for (let r = 0; r < radius; r += 2) {
+          const hue = angle;
+          const saturation = 100 * (r / radius);
+          const lightness = 50;
+          const color = `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+          
+          ctx.fillStyle = color;
+          ctx.beginPath();
+          ctx.moveTo(centerX, centerY);
+          ctx.arc(centerX, centerY, r, startAngle, endAngle);
+          ctx.closePath();
+          ctx.fill();
+        }
+      }
+      
+      // Click handler
+      canvas.addEventListener('click', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left - centerX;
+        const y = e.clientY - rect.top - centerY;
+        const distance = Math.sqrt(x * x + y * y);
+        
+        if (distance < radius) {
+          const angle = Math.atan2(y, x) * 180 / Math.PI + 180;
+          const saturation = 100 * (distance / radius);
+          const hue = angle;
+          selectedColorWheel = `hsl(${hue}, ${saturation}%, 50%)`;
+          
+          document.getElementById('colorPreview').style.background = selectedColorWheel;
+        }
       });
-      document.getElementById(tool + 'Btn').classList.add('active-tool');
-    };
+    }
     
-    window.downloadCanvas = function() {
+    // Eyedropper
+    let eyedropperActive = false;
+    function activateEyedropper() {
+      eyedropperActive = !eyedropperActive;
+      canvas.style.cursor = eyedropperActive ? 'crosshair' : 'crosshair';
+      
+      if (eyedropperActive) {
+        document.getElementById('eyedropperBtn').style.background = '#333';
+        document.getElementById('eyedropperBtn').style.color = 'white';
+        
+        canvas.addEventListener('click', pickColorFromCanvas);
+      } else {
+        document.getElementById('eyedropperBtn').style.background = 'white';
+        document.getElementById('eyedropperBtn').style.color = '#333';
+        canvas.removeEventListener('click', pickColorFromCanvas);
+      }
+    }
+    
+    function pickColorFromCanvas(e) {
+      const texture = app.renderer.generateTexture(world);
+      const canvas = texture.source.resource;
+      const ctx = canvas.getContext('2d');
+      
+      const rect = document.getElementById('c').getBoundingClientRect();
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      
+      const imageData = ctx.getImageData(x, y, 1, 1);
+      const [r, g, b] = imageData.data;
+      
+      const hex = '#' + [r, g, b].map(x => x.toString(16).padStart(2, '0')).join('').toUpperCase();
+      document.getElementById('colorInput').value = hex;
+      
+      texture.destroy(true);
+      eyedropperActive = false;
+      document.getElementById('eyedropperBtn').style.background = 'white';
+      document.getElementById('eyedropperBtn').style.color = '#333';
+    }
+    
+    // History
+    function saveHistory() {
+      const texture = app.renderer.generateTexture(world);
+      history.push(texture);
+      
+      if (history.length > maxHistorySize) {
+        history[0].destroy(true);
+        history.shift();
+      }
+    }
+    
+    function undo() {
+      if (history.length > 0) {
+        world.removeChildren();
+        const lastState = history.pop();
+        const sprite = new PIXI.Sprite(lastState);
+        world.addChild(sprite);
+      }
+    }
+    
+    // UI Functions
+    function clearCanvas() {
+      if (confirm('Clear the entire canvas?')) {
+        world.removeChildren();
+        history = [];
+      }
+    }
+    
+    function downloadCanvas() {
       const texture = app.renderer.generateTexture(world);
       const canvas = texture.source.resource;
       const link = document.createElement('a');
@@ -259,11 +793,11 @@
       link.download = `infinite-canvas-${Date.now()}.png`;
       link.click();
       texture.destroy(true);
-    };
+    }
     
     function updateStats() {
       const stats = document.getElementById('stats');
-      stats.innerText = `Zoom: ${zoom.toFixed(2)}x | Resolution: ${canvas.width}x${canvas.height}`;
+      stats.innerText = `Zoom: ${zoom.toFixed(2)}x | Touch: Pinch to zoom`;
     }
     
     // Initialize
