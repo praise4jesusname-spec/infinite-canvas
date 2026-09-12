@@ -429,6 +429,7 @@
         this.originX = 0;
         this.originY = 0;
         this.viewport = null;
+        this.brushTextures = new Map();
         this.layers = new Map(); // LOD (Level of Detail) layers
       }
       
@@ -459,7 +460,7 @@
         const samples = [];
         const flushSamples = () => {
           if (samples.length > 1) {
-            this.drawBrushRibbon(samples, stroke.color, dynamics);
+            this.drawBrushStroke(samples, stroke.color, dynamics);
           }
           samples.length = 0;
         };
@@ -522,58 +523,77 @@
           maxY >= top - padding && minY <= bottom + padding;
       }
       
-      drawBrushRibbon(samples, color, dynamics) {
+      drawBrushStroke(samples, color, dynamics) {
         if (samples.length < 2) return;
 
-        const ctx = this.ctx;
         const screenSamples = samples.map(sample => ({
           pos: this.worldToScreen(sample.pos),
           width: sample.width
         }));
-        ctx.fillStyle = color;
-        ctx.globalAlpha = dynamics.opacity;
-        ctx.filter = dynamics.softness > 0.5 ? `blur(${dynamics.softness}px)` : 'none';
 
-        const left = [];
-        const right = [];
-        for (let i = 0; i < screenSamples.length; i++) {
-          const previous = screenSamples[Math.max(0, i - 1)].pos;
-          const next = screenSamples[Math.min(screenSamples.length - 1, i + 1)].pos;
-          const direction = next.sub(previous).normalize();
-          const radius = Math.max(0.25, screenSamples[i].width / 2);
-          const normal = new Vec2(-direction.y * radius, direction.x * radius);
-          left.push(screenSamples[i].pos.add(normal));
-          right.push(screenSamples[i].pos.sub(normal));
+        this.drawBrushStamp(screenSamples[0].pos, screenSamples[0].width, color, dynamics);
+        for (let i = 1; i < screenSamples.length; i++) {
+          const previous = screenSamples[i - 1];
+          const current = screenSamples[i];
+          const distance = previous.pos.distance(current.pos);
+          const spacing = Math.max(0.5, Math.min(previous.width, current.width) * 0.2);
+          const steps = Math.max(1, Math.ceil(distance / spacing));
+
+          for (let step = 1; step <= steps; step++) {
+            const progress = step / steps;
+            const position = previous.pos.lerp(current.pos, progress);
+            const width = previous.width + (current.width - previous.width) * progress;
+            this.drawBrushStamp(position, width, color, dynamics);
+          }
         }
-
-        ctx.beginPath();
-        ctx.moveTo(left[0].x, left[0].y);
-        for (let i = 1; i < left.length; i++) ctx.lineTo(left[i].x, left[i].y);
-        for (let i = right.length - 1; i >= 0; i--) ctx.lineTo(right[i].x, right[i].y);
-        ctx.closePath();
-
-        const first = screenSamples[0];
-        const last = screenSamples[screenSamples.length - 1];
-        const firstRadius = Math.max(0.25, first.width / 2);
-        const lastRadius = Math.max(0.25, last.width / 2);
-        ctx.moveTo(first.pos.x + firstRadius, first.pos.y);
-        ctx.arc(first.pos.x, first.pos.y, firstRadius, 0, Math.PI * 2);
-        ctx.moveTo(last.pos.x + lastRadius, last.pos.y);
-        ctx.arc(last.pos.x, last.pos.y, lastRadius, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.filter = 'none';
-        ctx.globalAlpha = 1;
       }
 
       drawBrushDot(pos, width, color, dynamics) {
-        const ctx = this.ctx;
-        const screenPos = this.worldToScreen(pos);
-        ctx.fillStyle = color;
-        ctx.globalAlpha = dynamics.opacity;
-        ctx.beginPath();
-        ctx.arc(screenPos.x, screenPos.y, Math.max(0.25, width / 2), 0, Math.PI * 2);
-        ctx.fill();
-        ctx.globalAlpha = 1;
+        this.drawBrushStamp(this.worldToScreen(pos), width, color, dynamics);
+      }
+
+      drawBrushStamp(pos, width, color, dynamics) {
+        const texture = this.getBrushTexture(color, width, dynamics);
+        this.ctx.globalAlpha = dynamics.opacity;
+        this.ctx.drawImage(
+          texture.canvas,
+          pos.x - texture.cssSize / 2,
+          pos.y - texture.cssSize / 2,
+          texture.cssSize,
+          texture.cssSize
+        );
+        this.ctx.globalAlpha = 1;
+      }
+
+      getBrushTexture(color, width, dynamics) {
+        const diameter = Math.max(1, Math.round(width * 2) / 2);
+        const key = `${color}:${diameter}:${dynamics.softness}:${dpr}`;
+        const cachedTexture = this.brushTextures.get(key);
+        if (cachedTexture) return cachedTexture;
+
+        if (this.brushTextures.size >= 256) this.brushTextures.clear();
+
+        const padding = Math.max(2, diameter * (0.25 + dynamics.softness * 0.5));
+        const cssSize = diameter + padding * 2;
+        const textureCanvas = document.createElement('canvas');
+        textureCanvas.width = Math.ceil(cssSize * dpr);
+        textureCanvas.height = Math.ceil(cssSize * dpr);
+        const textureCtx = textureCanvas.getContext('2d');
+        textureCtx.scale(dpr, dpr);
+
+        const center = cssSize / 2;
+        const radius = diameter / 2 + padding;
+        const solidEdge = Math.max(0.15, 0.82 - dynamics.softness * 0.45);
+        const gradient = textureCtx.createRadialGradient(center, center, 0, center, center, radius);
+        gradient.addColorStop(0, color);
+        gradient.addColorStop(solidEdge, color);
+        gradient.addColorStop(1, 'transparent');
+        textureCtx.fillStyle = gradient;
+        textureCtx.fillRect(0, 0, cssSize, cssSize);
+
+        const texture = { canvas: textureCanvas, cssSize };
+        this.brushTextures.set(key, texture);
+        return texture;
       }
 
       worldToScreen(pos) {
