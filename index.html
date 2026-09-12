@@ -306,7 +306,10 @@
       ctx.scale(dpr, dpr);
     }
     resizeCanvas();
-    window.addEventListener('resize', resizeCanvas);
+    window.addEventListener('resize', () => {
+      resizeCanvas();
+      requestRender();
+    });
     
     // ===== VECTOR MATH =====
     class Vec2 {
@@ -603,6 +606,14 @@
     
     let lastX = 0, lastY = 0;
     let lastTime = 0;
+    let renderScheduled = false;
+
+    function requestRender() {
+      if (!renderScheduled) {
+        renderScheduled = true;
+        requestAnimationFrame(render);
+      }
+    }
 
     function setCamera(nextZoom, worldAnchor, screenAnchor) {
       if (!Number.isFinite(nextZoom) || nextZoom <= 0) return false;
@@ -616,6 +627,7 @@
       state.panY = nextPanY;
       renderer.zoom = state.zoom;
       updateStats();
+      requestRender();
       return true;
     }
 
@@ -631,6 +643,8 @@
     
     // ===== RENDERING LOOP =====
     function render() {
+      renderScheduled = false;
+
       // Clear canvas
       ctx.fillStyle = 'white';
       ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
@@ -654,9 +668,8 @@
         renderer.renderStroke(currentStroke);
       }
       
-      requestAnimationFrame(render);
     }
-    render();
+    requestRender();
     
     // ===== POINTER EVENTS =====
     canvas.addEventListener('pointerdown', (e) => {
@@ -681,6 +694,7 @@
       
       history.push(JSON.stringify(strokes));
       if (history.length > 50) history.shift();
+      requestRender();
     });
     
     canvas.addEventListener('pointermove', (e) => {
@@ -709,6 +723,7 @@
       lastTime = now;
       
       updateStats();
+      requestRender();
     });
     
     function finishStroke(e) {
@@ -722,6 +737,7 @@
       state.isDrawing = false;
       state.pressure = 0;
       updateStats();
+      requestRender();
     }
     
     canvas.addEventListener('pointerup', finishStroke);
@@ -808,6 +824,7 @@
         state.panY += e.clientY - panStartY;
         panStartX = e.clientX;
         panStartY = e.clientY;
+        requestRender();
       }
     });
     
@@ -844,6 +861,7 @@
       if (strokes.length > 0) {
         strokes.pop();
         updateStats();
+        requestRender();
       }
     });
     
@@ -852,6 +870,7 @@
         strokes = [];
         history = [];
         updateStats();
+        requestRender();
       }
     });
     
