@@ -949,7 +949,7 @@
     
     async function startRecording() {
       try {
-        const stream = canvas.captureStream(60);
+        const stream = canvas.captureStream(144);
         recordedChunks = [];
         const preferredOptions = {
           mimeType: 'video/webm;codecs=vp9',
