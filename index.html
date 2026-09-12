@@ -413,22 +413,32 @@
       }
       
       // Compute width based on velocity and pressure (Endless Paper style)
-      computeWidth(prevPos, currPos, pressure, dynamics) {
-        const velocity = prevPos ? prevPos.distance(currPos) : 0;
+      computeWidth(prevPos, currPos, pressure, dynamics, baseSize) {
+        const velocity = prevPos ? prevPos.distance(currPos) * this.zoom : 0;
         const velocityFactor = Math.pow(Math.max(0.1, 1 - velocity * 0.01), dynamics.velocityTaper);
-        const widthFromPressure = dynamics.baseWidth * (0.5 + pressure * dynamics.pressureSensitivity);
+        const widthFromPressure = dynamics.baseWidth * (baseSize / 3) *
+          (0.5 + pressure * dynamics.pressureSensitivity);
         return widthFromPressure * velocityFactor * (1 / this.zoom);
       }
       
-      // Render stroke with adaptive sampling (fractal subdivision)
+      // Render each stroke as one continuous variable-width ribbon.
       renderStroke(stroke, startIdx = 0, endIdx = null) {
         if (endIdx === null) endIdx = stroke.points.length - 1;
+        if (stroke.points.length === 1) {
+          const point = stroke.points[0];
+          const dynamics = brushDynamics[stroke.tool];
+          const width = this.computeWidth(null, point.pos, point.pressure, dynamics, stroke.baseSize);
+          this.drawBrushDot(point.pos, width, stroke.color, dynamics);
+          return;
+        }
+
         if (startIdx >= endIdx) return;
         
         const dynamics = brushDynamics[stroke.tool];
         const points = stroke.points;
+        const samples = [];
         
-        // Adaptive Catmull-Rom spline with fractal subdivision
+        // Adaptive Catmull-Rom spline sampling in screen-space.
         for (let i = startIdx; i < endIdx; i++) {
           const p0 = i > 0 ? points[i - 1].pos : points[i].pos;
           const p1 = points[i].pos;
@@ -438,10 +448,11 @@
           const pressure1 = points[i].pressure;
           const pressure2 = points[i + 1].pressure;
           
-          // Fractal subdivision - draw multiple segments for smooth curves
-          const segments = Math.max(2, Math.ceil(p1.distance(p2) * 0.5));
+          const segments = Math.min(64, Math.max(2, Math.ceil(p1.distance(p2) * this.zoom * 0.25)));
           
-          for (let t = 0; t < segments; t++) {
+          for (let t = 0; t <= segments; t++) {
+            if (i > startIdx && t === 0) continue;
+
             const tau = t / segments;
             const tau2 = tau * tau;
             const tau3 = tau2 * tau;
@@ -453,34 +464,64 @@
               .add(p3.mul(0.5 * tau3 - 0.5 * tau2));
             
             const pressure = pressure1 + (pressure2 - pressure1) * tau;
-            const width = this.computeWidth(p1, q, pressure, dynamics);
-            
-            // Render with softness (fractal brush texture)
-            this.drawBrushPoint(q, width, stroke.color, dynamics);
+            const width = this.computeWidth(p1, q, pressure, dynamics, stroke.baseSize);
+            const lastSample = samples[samples.length - 1];
+            if (lastSample && lastSample.pos.distance(q) < 0.001) {
+              lastSample.width = width;
+            } else {
+              samples.push({ pos: q, width });
+            }
           }
         }
+
+        this.drawBrushRibbon(samples, stroke.color, dynamics);
       }
       
-      // Fractal brush point rendering with soft edges
-      drawBrushPoint(pos, width, color, dynamics) {
+      drawBrushRibbon(samples, color, dynamics) {
+        if (samples.length < 2) return;
+
         const ctx = this.ctx;
-        
         ctx.fillStyle = color;
         ctx.globalAlpha = dynamics.opacity;
-        
-        const actualWidth = Math.max(0.5, width);
-        
-        if (dynamics.softness > 0.5) {
-          // Soft brush - fractal gradient
-          const gradient = ctx.createRadialGradient(pos.x, pos.y, 0, pos.x, pos.y, actualWidth);
-          gradient.addColorStop(0, color);
-          gradient.addColorStop(1, color + '00');
-          ctx.fillStyle = gradient;
+        ctx.filter = dynamics.softness > 0.5 ? `blur(${dynamics.softness}px)` : 'none';
+
+        const left = [];
+        const right = [];
+        for (let i = 0; i < samples.length; i++) {
+          const previous = samples[Math.max(0, i - 1)].pos;
+          const next = samples[Math.min(samples.length - 1, i + 1)].pos;
+          const direction = next.sub(previous).normalize();
+          const radius = Math.max(0.25 / this.zoom, samples[i].width / 2);
+          const normal = new Vec2(-direction.y * radius, direction.x * radius);
+          left.push(samples[i].pos.add(normal));
+          right.push(samples[i].pos.sub(normal));
         }
-        
-        // Draw circle with dynamic scaling
+
         ctx.beginPath();
-        ctx.arc(pos.x, pos.y, actualWidth / 2, 0, Math.PI * 2);
+        ctx.moveTo(left[0].x, left[0].y);
+        for (let i = 1; i < left.length; i++) ctx.lineTo(left[i].x, left[i].y);
+        for (let i = right.length - 1; i >= 0; i--) ctx.lineTo(right[i].x, right[i].y);
+        ctx.closePath();
+
+        const first = samples[0];
+        const last = samples[samples.length - 1];
+        const firstRadius = Math.max(0.25 / this.zoom, first.width / 2);
+        const lastRadius = Math.max(0.25 / this.zoom, last.width / 2);
+        ctx.moveTo(first.pos.x + firstRadius, first.pos.y);
+        ctx.arc(first.pos.x, first.pos.y, firstRadius, 0, Math.PI * 2);
+        ctx.moveTo(last.pos.x + lastRadius, last.pos.y);
+        ctx.arc(last.pos.x, last.pos.y, lastRadius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.filter = 'none';
+        ctx.globalAlpha = 1;
+      }
+
+      drawBrushDot(pos, width, color, dynamics) {
+        const ctx = this.ctx;
+        ctx.fillStyle = color;
+        ctx.globalAlpha = dynamics.opacity;
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, Math.max(0.25 / this.zoom, width / 2), 0, Math.PI * 2);
         ctx.fill();
         ctx.globalAlpha = 1;
       }
@@ -514,6 +555,18 @@
     
     let lastX = 0, lastY = 0;
     let lastTime = 0;
+
+    function zoomAt(factor, clientX, clientY) {
+      const oldZoom = state.zoom;
+      const nextZoom = oldZoom * factor;
+      if (!Number.isFinite(nextZoom) || nextZoom <= 0) return;
+
+      state.zoom = nextZoom;
+      state.panX = clientX - (clientX - state.panX) * factor;
+      state.panY = clientY - (clientY - state.panY) * factor;
+      renderer.zoom = state.zoom;
+      updateStats();
+    }
     
     // ===== RENDERING LOOP =====
     function render() {
@@ -530,6 +583,9 @@
       for (const stroke of strokes) {
         renderer.renderStroke(stroke);
       }
+      if (currentStroke) {
+        renderer.renderStroke(currentStroke);
+      }
       
       ctx.restore();
       
@@ -544,6 +600,7 @@
       
       state.isDrawing = true;
       state.pressure = e.pressure || 0.5;
+      canvas.setPointerCapture(e.pointerId);
       
       const pos = new Vec2(
         (e.clientX - state.panX) / state.zoom,
@@ -589,28 +646,29 @@
       updateStats();
     });
     
-    canvas.addEventListener('pointerup', () => {
+    function finishStroke(e) {
       if (state.isDrawing && currentStroke) {
         strokes.push(currentStroke);
         currentStroke = null;
+      }
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
       }
       state.isDrawing = false;
       state.pressure = 0;
-    });
+      updateStats();
+    }
     
-    canvas.addEventListener('pointerleave', () => {
-      if (state.isDrawing && currentStroke) {
-        strokes.push(currentStroke);
-        currentStroke = null;
-      }
-      state.isDrawing = false;
-    });
+    canvas.addEventListener('pointerup', finishStroke);
+    canvas.addEventListener('pointercancel', finishStroke);
     
     // ===== TOUCH ZOOM (FIXED) =====
     canvas.addEventListener('touchstart', (e) => {
       state.touchCount = e.touches.length;
       
       if (e.touches.length === 2) {
+        currentStroke = null;
+        state.isDrawing = false;
         const dx = e.touches[0].clientX - e.touches[1].clientX;
         const dy = e.touches[0].clientY - e.touches[1].clientY;
         state.lastTouchDistance = Math.sqrt(dx * dx + dy * dy);
@@ -625,25 +683,17 @@
         const dy = e.touches[0].clientY - e.touches[1].clientY;
         const currentDistance = Math.sqrt(dx * dx + dy * dy);
         
-        if (state.lastTouchDistance > 0) {
+        if (currentDistance > 0 && state.lastTouchDistance > 0) {
           const ratio = currentDistance / state.lastTouchDistance;
           const pinchCenter = new Vec2(
             (e.touches[0].clientX + e.touches[1].clientX) / 2,
             (e.touches[0].clientY + e.touches[1].clientY) / 2
           );
           
-          // Zoom towards pinch center
-          const oldZoom = state.zoom;
-          state.zoom *= ratio;
-          state.zoom = Math.max(0.01, Math.min(state.zoom, 1000));
-          
-          // Adjust pan to keep center fixed
-          state.panX = pinchCenter.x - (pinchCenter.x - state.panX) * (state.zoom / oldZoom);
-          state.panY = pinchCenter.y - (pinchCenter.y - state.panY) * (state.zoom / oldZoom);
-          
-          renderer.zoom = state.zoom;
+          zoomAt(ratio, pinchCenter.x, pinchCenter.y);
+        }
+        if (currentDistance > 0) {
           state.lastTouchDistance = currentDistance;
-          updateStats();
         }
       }
     }, { passive: false });
@@ -657,17 +707,7 @@
     canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
       
-      const delta = e.deltaY > 0 ? 0.95 : 1.05;
-      const oldZoom = state.zoom;
-      state.zoom *= delta;
-      state.zoom = Math.max(0.01, Math.min(state.zoom, 1000));
-      
-      // Zoom towards mouse position
-      state.panX = e.clientX - (e.clientX - state.panX) * (state.zoom / oldZoom);
-      state.panY = e.clientY - (e.clientY - state.panY) * (state.zoom / oldZoom);
-      
-      renderer.zoom = state.zoom;
-      updateStats();
+      zoomAt(Math.exp(-e.deltaY * 0.001), e.clientX, e.clientY);
     }, { passive: false });
     
     // ===== PAN (RIGHT CLICK) =====
@@ -723,6 +763,7 @@
     document.getElementById('undoBtn').addEventListener('click', () => {
       if (strokes.length > 0) {
         strokes.pop();
+        updateStats();
       }
     });
     
@@ -730,12 +771,13 @@
       if (confirm('Clear canvas?')) {
         strokes = [];
         history = [];
+        updateStats();
       }
     });
     
     document.getElementById('downloadBtn').addEventListener('click', () => {
       const link = document.createElement('a');
-      link.href = canvas.toDataURL();
+      link.href = canvas.toDataURL('image/png');
       link.download = `canvas-${Date.now()}.png`;
       link.click();
     });
@@ -747,12 +789,15 @@
     
     async function startRecording() {
       try {
-        const stream = await canvas.captureStream(60);
+        const stream = canvas.captureStream(60);
         recordedChunks = [];
-        mediaRecorder = new MediaRecorder(stream, {
+        const preferredOptions = {
           mimeType: 'video/webm;codecs=vp9',
           videoBitsPerSecond: 5000000
-        });
+        };
+        mediaRecorder = MediaRecorder.isTypeSupported(preferredOptions.mimeType)
+          ? new MediaRecorder(stream, preferredOptions)
+          : new MediaRecorder(stream);
         
         mediaRecorder.ondataavailable = (event) => {
           if (event.data.size > 0) recordedChunks.push(event.data);
@@ -783,7 +828,8 @@
         document.getElementById('recordBtn').classList.add('recording');
         document.getElementById('recordingIndicator').classList.add('active');
       } catch (err) {
-        alert('Recording not supported');
+        console.error('Unable to start recording.', err);
+        alert('Recording could not be started in this browser.');
       }
     }
     
@@ -818,6 +864,7 @@
           wheelCtx.fill();
         }
       }
+      wheelCanvas.removeEventListener('click', selectColorFromWheel);
       wheelCanvas.addEventListener('click', selectColorFromWheel);
     }
     
@@ -846,8 +893,11 @@
     
     function updateStats() {
       const pressurePercent = Math.round(state.pressure * 100);
+      const zoomLabel = state.zoom < 0.01 || state.zoom >= 10000
+        ? state.zoom.toExponential(2)
+        : state.zoom.toFixed(2);
       document.getElementById('stats').textContent = 
-        `Zoom: ${state.zoom.toFixed(2)}x | Pressure: ${pressurePercent}% | Strokes: ${strokes.length}`;
+        `Zoom: ${zoomLabel}x | Pressure: ${pressurePercent}% | Strokes: ${strokes.length}`;
     }
   </script>
 </body>
