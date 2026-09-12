@@ -364,11 +364,12 @@
     
     // ===== VECTOR STROKE =====
     class Stroke {
-      constructor(tool, color, baseSize) {
+      constructor(tool, color, baseSize, drawZoom) {
         this.points = []; // Array of {pos: Vec2, pressure: number, timestamp: number}
         this.tool = tool;
         this.color = color;
         this.baseSize = baseSize;
+        this.drawZoom = drawZoom;
       }
       
       addPoint(pos, pressure, timestamp) {
@@ -434,8 +435,8 @@
       }
       
       // Compute width based on velocity and pressure (Endless Paper style)
-      computeWidth(prevPos, currPos, pressure, dynamics, baseSize) {
-        const velocity = prevPos ? prevPos.distance(currPos) * this.zoom : 0;
+      computeWidth(prevPos, currPos, pressure, dynamics, baseSize, drawZoom) {
+        const velocity = prevPos ? prevPos.distance(currPos) * drawZoom : 0;
         const velocityFactor = Math.pow(Math.max(0.1, 1 - velocity * 0.01), dynamics.velocityTaper);
         const widthFromPressure = dynamics.baseWidth * (baseSize / 3) *
           (0.5 + pressure * dynamics.pressureSensitivity);
@@ -448,7 +449,14 @@
         if (stroke.points.length === 1) {
           const point = stroke.points[0];
           const dynamics = brushDynamics[stroke.tool];
-          const width = this.computeWidth(null, point.pos, point.pressure, dynamics, stroke.baseSize);
+          const width = this.computeWidth(
+            null,
+            point.pos,
+            point.pressure,
+            dynamics,
+            stroke.baseSize,
+            stroke.drawZoom
+          );
           this.drawBrushDot(point.pos, width, stroke.color, dynamics);
           return;
         }
@@ -496,7 +504,14 @@
               .add(p3.mul(0.5 * tau3 - 0.5 * tau2));
             
             const pressure = pressure1 + (pressure2 - pressure1) * tau;
-            const width = this.computeWidth(p1, q, pressure, dynamics, stroke.baseSize);
+            const width = this.computeWidth(
+              p1,
+              q,
+              pressure,
+              dynamics,
+              stroke.baseSize,
+              stroke.drawZoom
+            );
             const lastSample = samples[samples.length - 1];
             if (lastSample && lastSample.pos.distance(q) < 0.001) {
               lastSample.width = width;
@@ -771,7 +786,7 @@
       lastY = pos.y;
       lastTime = performance.now();
       
-      currentStroke = new Stroke(state.tool, state.color, state.size);
+      currentStroke = new Stroke(state.tool, state.color, state.size, state.zoom);
       currentStroke.addPoint(pos, state.pressure, lastTime);
       
       history.push(JSON.stringify(strokes));
