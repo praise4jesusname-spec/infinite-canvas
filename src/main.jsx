@@ -7,7 +7,7 @@ import './styles.css'
 function App() {
   return (
     <main className="canvas-app">
-      <Tldraw />
+      <Tldraw persistenceKey="infinite-canvas" />
     </main>
   )
 }
